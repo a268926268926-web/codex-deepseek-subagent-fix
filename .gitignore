@@ -1,0 +1,15 @@
+# 密钥与私人配置
+*.key
+*.pem
+config.toml
+models.json
+.env
+
+# 日志与二进制
+*.log
+*.bin
+target/
+
+# 本地会话数据
+sessions/
+.codex/

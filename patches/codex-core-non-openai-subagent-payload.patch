@@ -1,0 +1,186 @@
+From 2dd6429ae2db45b2c7720daa1e5f1a78ad5835d6 Mon Sep 17 00:00:00 2001
+From: CCanxue <CCanxue@users.noreply.github.com>
+Date: Mon, 3 Aug 2026 16:12:20 +0800
+Subject: [PATCH] fix(core): deliver V2 subagent tasks as plain user input for
+ non-OpenAI providers
+
+---
+ .../handlers/multi_agents_v2/message_tool.rs  | 60 ++++++++++-----
+ .../tools/handlers/multi_agents_v2/spawn.rs   | 74 ++++++++++++-------
+ 2 files changed, 89 insertions(+), 45 deletions(-)
+
+diff --git a/codex-rs/core/src/tools/handlers/multi_agents_v2/message_tool.rs b/codex-rs/core/src/tools/handlers/multi_agents_v2/message_tool.rs
+index eb17904..5b705d7 100644
+--- a/codex-rs/core/src/tools/handlers/multi_agents_v2/message_tool.rs
++++ b/codex-rs/core/src/tools/handlers/multi_agents_v2/message_tool.rs
+@@ -7,6 +7,7 @@ use super::*;
+ use crate::agent_communication::AgentCommunicationContext;
+ use crate::agent_communication::AgentCommunicationKind;
+ use crate::tools::context::FunctionToolOutput;
++use codex_protocol::user_input::UserInput;
+ 
+ #[derive(Clone, Copy, PartialEq, Eq)]
+ pub(crate) enum MessageDeliveryMode {
+@@ -93,26 +94,49 @@ pub(crate) async fn handle_message_string_tool(
+         .session_source
+         .get_agent_path()
+         .unwrap_or_else(AgentPath::root);
+-    let communication = communication_from_tool_message(
+-        author,
+-        receiver_agent_path.clone(),
+-        message,
+-        &source,
+-        mode.trigger_turn(),
+-    );
+-    let kind = match mode {
+-        MessageDeliveryMode::QueueOnly => AgentCommunicationKind::Message,
+-        MessageDeliveryMode::TriggerTurn => AgentCommunicationKind::Followup,
+-    };
+-    let context = AgentCommunicationContext::new(kind, session.thread_id);
+     let parent_turn_id =
+         matches!(mode, MessageDeliveryMode::TriggerTurn).then(|| turn.sub_id.clone());
+-    let result = session
+-        .services
+-        .agent_control
+-        .send_inter_agent_communication(receiver_thread_id, communication, context, parent_turn_id)
+-        .await
+-        .map_err(|err| collab_agent_error(receiver_thread_id, err));
++    let result = if turn.provider.info().is_openai() {
++        let communication = communication_from_tool_message(
++            author,
++            receiver_agent_path.clone(),
++            message,
++            &source,
++            mode.trigger_turn(),
++        );
++        let kind = match mode {
++            MessageDeliveryMode::QueueOnly => AgentCommunicationKind::Message,
++            MessageDeliveryMode::TriggerTurn => AgentCommunicationKind::Followup,
++        };
++        let context = AgentCommunicationContext::new(kind, session.thread_id);
++        session
++            .services
++            .agent_control
++            .send_inter_agent_communication(
++                receiver_thread_id,
++                communication,
++                context,
++                parent_turn_id,
++            )
++            .await
++    } else {
++        // Third-party Responses providers cannot reliably consume the
++        // Codex-specific `agent_message` delivery, so deliver messages as plain
++        // user input instead.
++        session
++            .services
++            .agent_control
++            .send_input(
++                receiver_thread_id,
++                vec![UserInput::Text {
++                    text: message,
++                    text_elements: Vec::new(),
++                }],
++                parent_turn_id,
++            )
++            .await
++    }
++    .map_err(|err| collab_agent_error(receiver_thread_id, err));
+     result?;
+     emit_sub_agent_activity(
+         &session,
+diff --git a/codex-rs/core/src/tools/handlers/multi_agents_v2/spawn.rs b/codex-rs/core/src/tools/handlers/multi_agents_v2/spawn.rs
+index a6b5c46..043bd11 100644
+--- a/codex-rs/core/src/tools/handlers/multi_agents_v2/spawn.rs
++++ b/codex-rs/core/src/tools/handlers/multi_agents_v2/spawn.rs
+@@ -9,6 +9,7 @@ use crate::tools::handlers::multi_agents_spec::SpawnAgentToolOptions;
+ use crate::tools::handlers::multi_agents_spec::create_spawn_agent_tool_v2;
+ use crate::tools::handlers::multi_agents_v2::message_tool::message_content;
+ use codex_protocol::AgentPath;
++use codex_protocol::user_input::UserInput;
+ use codex_tools::ToolSpec;
+ 
+ #[derive(Default)]
+@@ -105,33 +106,52 @@ async fn handle_spawn_agent(
+         .session_source
+         .get_agent_path()
+         .unwrap_or_else(AgentPath::root);
+-    let communication = communication_from_tool_message(
+-        author,
+-        new_agent_path.clone(),
+-        message,
+-        &source,
+-        /*trigger_turn*/ true,
+-    );
+-    let context = AgentCommunicationContext::new(AgentCommunicationKind::Spawn, session.thread_id);
+-    let spawned_agent = Box::pin(
+-        session
+-            .services
+-            .agent_control
+-            .spawn_agent_with_communication(
+-                config,
+-                communication,
+-                context,
+-                Some(spawn_source),
+-                SpawnAgentOptions {
+-                    fork_parent_spawn_call_id: fork_mode.as_ref().map(|_| call_id.clone()),
+-                    fork_mode,
+-                    parent_thread_id: Some(session.thread_id),
+-                    parent_turn_id: Some(turn.sub_id.clone()),
+-                    environments: Some(step_context.environments.to_selections()),
+-                },
+-            ),
+-    )
+-    .await
++    let spawn_options = SpawnAgentOptions {
++        fork_parent_spawn_call_id: fork_mode.as_ref().map(|_| call_id.clone()),
++        fork_mode,
++        parent_thread_id: Some(session.thread_id),
++        parent_turn_id: Some(turn.sub_id.clone()),
++        environments: Some(step_context.environments.to_selections()),
++    };
++    let spawned_agent = if turn.provider.info().is_openai() {
++        let communication = communication_from_tool_message(
++            author,
++            new_agent_path.clone(),
++            message,
++            &source,
++            /*trigger_turn*/ true,
++        );
++        let context =
++            AgentCommunicationContext::new(AgentCommunicationKind::Spawn, session.thread_id);
++        Box::pin(
++            session
++                .services
++                .agent_control
++                .spawn_agent_with_communication(
++                    config,
++                    communication,
++                    context,
++                    Some(spawn_source),
++                    spawn_options,
++                ),
++        )
++        .await
++    } else {
++        // Third-party Responses providers cannot reliably consume the
++        // Codex-specific `agent_message` delivery. Mirror the V1 behavior and
++        // deliver the spawn task as a plain user input so the child model
++        // actually receives and executes it.
++        Box::pin(session.services.agent_control.spawn_agent_with_metadata(
++            config,
++            vec![UserInput::Text {
++                text: message,
++                text_elements: Vec::new(),
++            }],
++            Some(spawn_source),
++            spawn_options,
++        ))
++        .await
++    }
+     .map_err(collab_spawn_error)?;
+     let new_thread_id = spawned_agent.thread_id;
+     let agent_snapshot = session
+-- 
+2.43.0
+

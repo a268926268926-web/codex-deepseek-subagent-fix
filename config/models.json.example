@@ -1,0 +1,33 @@
+# ~/.codex/models.json 中 deepseek 条目的关键字段（脱敏示例）
+# 完整目录建议使用 DeepSeek 官方一键配置脚本生成，再按需修改
+
+{
+  "models": [
+    {
+      "slug": "deepseek-v4-flash",
+      "multi_agent_version": "v2",
+      "prefer_websockets": false,
+      "support_verbosity": true,
+      "supports_parallel_tool_calls": true,
+      "supports_image_detail_original": false,
+      "input_modalities": ["text"],
+      "truncation_policy": {"mode": "tokens", "limit": 10000}
+    },
+    {
+      "slug": "deepseek-v4-pro",
+      "multi_agent_version": "v2",
+      "prefer_websockets": false,
+      "support_verbosity": true,
+      "supports_parallel_tool_calls": true,
+      "supports_image_detail_original": false,
+      "input_modalities": ["text"],
+      "truncation_policy": {"mode": "tokens", "limit": 10000}
+    }
+  ]
+}
+
+# 注意：
+# - 保持 multi_agent_version = "v2"（配合本补丁可用；改 v1 后工具族会被
+#   tool_search 隐藏，DeepSeek 模型无法发现，见 README 踩坑记录）
+# - 官方 setup 脚本生成的条目还包含 model_messages / base_instructions 等字段，
+#   请以官方完整条目为准，不要删减
