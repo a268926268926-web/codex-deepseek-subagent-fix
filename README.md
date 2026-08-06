@@ -7,6 +7,15 @@
 - [openai/codex#36376](https://github.com/openai/codex/issues/36376)：OpenAI 父代理 -> 非 OpenAI 子代理（真密文，需上游解决，见下文）
 - [openai/codex#36382](https://github.com/openai/codex/issues/36382)：DeepSeek 官方配置下工具静默不可用（同族问题）
 
+### Similar issues in other repositories
+
+- [deepseek-ai/awesome-deepseek-agent#335](https://github.com/deepseek-ai/awesome-deepseek-agent/issues/335) - DeepSeek official repo: subagent initialization problem with Codex, same `agent_message`/`encrypted_content` incompatibility.
+- [BigStrongSun/ccswitchmulti#18](https://github.com/BigStrongSun/ccswitchmulti/issues/18) - plaintext written into `encrypted_content` breaks history replay (decrypt error, 5 retries).
+- [router-for-me/CLIProxyAPI#4801](https://github.com/router-for-me/CLIProxyAPI/issues/4801) - proxy skips `agent_message -> message` conversion on Responses-to-Responses forwarding.
+- [NousResearch/hermes-agent#32617](https://github.com/NousResearch/hermes-agent/issues/32617) / [openai/codex#17541](https://github.com/openai/codex/issues/17541) - replaying history ciphertext after a provider/model switch causes HTTP 400.
+
+The pattern: `agent_message`/`encrypted_content` are Codex-specific protocol assumptions. Community fixes fall into three layers: core delivery (this patch), proxy conversion, and history-stripping on provider switch.
+
 ## 症状
 
 codex-cli 0.146.0 + DeepSeek（`deepseek-v4-flash`，`wire_api = "responses"`，models.json 中 `multi_agent_version = "v2"`）：
