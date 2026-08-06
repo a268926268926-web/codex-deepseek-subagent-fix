@@ -7,14 +7,14 @@
 - [openai/codex#36376](https://github.com/openai/codex/issues/36376)：OpenAI 父代理 -> 非 OpenAI 子代理（真密文，需上游解决，见下文）
 - [openai/codex#36382](https://github.com/openai/codex/issues/36382)：DeepSeek 官方配置下工具静默不可用（同族问题）
 
-### Similar issues in other repositories
+### 其他仓库中的同类问题
 
-- [deepseek-ai/awesome-deepseek-agent#335](https://github.com/deepseek-ai/awesome-deepseek-agent/issues/335) - DeepSeek official repo: subagent initialization problem with Codex, same `agent_message`/`encrypted_content` incompatibility.
-- [BigStrongSun/ccswitchmulti#18](https://github.com/BigStrongSun/ccswitchmulti/issues/18) - plaintext written into `encrypted_content` breaks history replay (decrypt error, 5 retries).
-- [router-for-me/CLIProxyAPI#4801](https://github.com/router-for-me/CLIProxyAPI/issues/4801) - proxy skips `agent_message -> message` conversion on Responses-to-Responses forwarding.
-- [NousResearch/hermes-agent#32617](https://github.com/NousResearch/hermes-agent/issues/32617) / [openai/codex#17541](https://github.com/openai/codex/issues/17541) - replaying history ciphertext after a provider/model switch causes HTTP 400.
+- [deepseek-ai/awesome-deepseek-agent#335](https://github.com/deepseek-ai/awesome-deepseek-agent/issues/335)：DeepSeek 官方仓库反馈接入 Codex 后 subagent 初始化问题，同为 `agent_message`/`encrypted_content` 不兼容
+- [BigStrongSun/ccswitchmulti#18](https://github.com/BigStrongSun/ccswitchmulti/issues/18)：明文被写入 `encrypted_content` 导致历史回放解密失败（5 次重连）
+- [router-for-me/CLIProxyAPI#4801](https://github.com/router-for-me/CLIProxyAPI/issues/4801)：代理层 Responses 转发跳过 `agent_message -> message` 转换
+- [NousResearch/hermes-agent#32617](https://github.com/NousResearch/hermes-agent/issues/32617) / [openai/codex#17541](https://github.com/openai/codex/issues/17541)：换 provider/模型后回放历史密文导致 HTTP 400
 
-The pattern: `agent_message`/`encrypted_content` are Codex-specific protocol assumptions. Community fixes fall into three layers: core delivery (this patch), proxy conversion, and history-stripping on provider switch.
+共同点：`agent_message`/`encrypted_content` 是 Codex 私有协议假设；社区修复分三层：核心投递（本补丁）、代理转换、换 provider 时剥离历史密文。
 
 ## 症状
 
