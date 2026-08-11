@@ -6,6 +6,9 @@
 - [openai/codex#36586](https://github.com/openai/codex/issues/36586)：DeepSeek 子代理收不到 V2 任务（encrypted_content 被丢弃）
 - [openai/codex#36376](https://github.com/openai/codex/issues/36376)：OpenAI 父代理 -> 非 OpenAI 子代理（真密文，需上游解决，见下文）
 - [openai/codex#36382](https://github.com/openai/codex/issues/36382)：DeepSeek 官方配置下工具静默不可用（同族问题）
+- [openai/codex#37822](https://github.com/openai/codex/issues/37822)：最新同问题报告（0.147/Desktop，任务仅在 encrypted_content 中被丢弃）
+- [openai/codex#37475](https://github.com/openai/codex/issues/37475)：Bedrock 0.147 直接拒绝 agent_message（同族协议假设问题）
+- [openai/codex#37197](https://github.com/openai/codex/issues/37197)：社区 opt-in 明文投递方案（覆盖 OpenAI 父 -> 第三方子的上游候选）
 
 ### 其他仓库中的同类问题
 
