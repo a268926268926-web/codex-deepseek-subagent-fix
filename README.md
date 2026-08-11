@@ -16,6 +16,9 @@
 - [BigStrongSun/ccswitchmulti#18](https://github.com/BigStrongSun/ccswitchmulti/issues/18)：明文被写入 `encrypted_content` 导致历史回放解密失败（5 次重连）
 - [router-for-me/CLIProxyAPI#4801](https://github.com/router-for-me/CLIProxyAPI/issues/4801)：代理层 Responses 转发跳过 `agent_message -> message` 转换
 - [NousResearch/hermes-agent#32617](https://github.com/NousResearch/hermes-agent/issues/32617) / [openai/codex#17541](https://github.com/openai/codex/issues/17541)：换 provider/模型后回放历史密文导致 HTTP 400
+- [zed-industries/zed#62299](https://github.com/zed-industries/zed/issues/62299)：Zed 编辑器接入 Codex + DeepSeek 时子代理任务同样被丢弃
+- [NOirBRight/CodexHub#394](https://github.com/NOirBRight/CodexHub/issues/394)：第三方网关在 Chat Completions 上实现 Collaboration V2，需处理 `agent_message` 语义
+- [weijunswj/ai-agent-toolkit#341](https://github.com/weijunswj/ai-agent-toolkit/issues/341)：GPT 与 DeepSeek 互派子代理的混合 provider 设计（跨 provider 方向仍受 #36376 阻塞）
 
 共同点：`agent_message`/`encrypted_content` 是 Codex 私有协议假设；社区修复分三层：核心投递（本补丁）、代理转换、换 provider 时剥离历史密文。
 
