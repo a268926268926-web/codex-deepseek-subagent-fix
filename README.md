@@ -9,6 +9,7 @@
 - [openai/codex#37822](https://github.com/openai/codex/issues/37822)：最新同问题报告（0.147/Desktop，任务仅在 encrypted_content 中被丢弃）
 - [openai/codex#37475](https://github.com/openai/codex/issues/37475)：Bedrock 0.147 直接拒绝 agent_message（同族协议假设问题）
 - [openai/codex#37197](https://github.com/openai/codex/issues/37197)：社区 opt-in 明文投递方案（覆盖 OpenAI 父 -> 第三方子的上游候选）
+- [openai/codex#38365](https://github.com/openai/codex/issues/38365)：跨 provider 会话交接需归一化工具历史（历史回放同族）
 
 ### 其他仓库中的同类问题
 
@@ -19,6 +20,9 @@
 - [zed-industries/zed#62299](https://github.com/zed-industries/zed/issues/62299)：Zed 编辑器接入 Codex + DeepSeek 时子代理任务同样被丢弃
 - [NOirBRight/CodexHub#394](https://github.com/NOirBRight/CodexHub/issues/394)：第三方网关在 Chat Completions 上实现 Collaboration V2，需处理 `agent_message` 语义
 - [weijunswj/ai-agent-toolkit#341](https://github.com/weijunswj/ai-agent-toolkit/issues/341)：GPT 与 DeepSeek 互派子代理的混合 provider 设计（跨 provider 方向仍受 #36376 阻塞）
+- [MetaFARS/codex-relay#60](https://github.com/MetaFARS/codex-relay/issues/60)：relay 原样透传 `encrypted_content` 导致 Chat Completions 400
+- [duolahypercho/codex-router#183](https://github.com/duolahypercho/codex-router/pull/183)：路由器启用 DeepSeek v2 子代理（非 OpenAI 父场景明文可映射）
+- [fish2lab/DSCodex#17](https://github.com/fish2lab/DSCodex/issues/17)：DeepSeek 切 GPT 后明文 reasoning 历史导致 400（历史回放同族）
 
 共同点：`agent_message`/`encrypted_content` 是 Codex 私有协议假设；社区修复分三层：核心投递（本补丁）、代理转换、换 provider 时剥离历史密文。
 
@@ -90,13 +94,13 @@ codex --version
 | V1 | `multi_agent_v1` | `spawn_agent`、`send_input`、`resume_agent`、`wait_agent`、`close_agent` |
 | V2 | `collaboration` | `spawn_agent`、`send_message`、`followup_task`、`wait_agent`、`interrupt_agent`、`list_agents` |
 
-### models.json 改 v1 不可行（对 DeepSeek）
+### models.json 改 v1 的可用变体
 
-把 models.json 中 deepseek 条目改为 `multi_agent_version = "v1"` 后：
+仅改 `multi_agent_version = "v1"` 时，V1 工具族被注册为 **Deferred**，须先调用 `tool_search` 才能载入；而 deepseek-v4-flash 无法识别/调用 `tool_search`（与 #36382 同族问题），V1 工具不可达。
 
-- V1 工具族被注册为 **Deferred**，必须先调用 `tool_search` 才能载入；
-- `tool_search` 虽然在请求的 tools 数组中，但 deepseek-v4-flash 无法识别/调用它（与 #36382 同族问题）；
-- 结论：**保持 `multi_agent_version = "v2"` + 本补丁**才是可用组合。
+社区补充的可用变体（见 [#36586 评论](https://github.com/openai/codex/issues/36586)）：同时设置 `supports_search_tool = false`，V1 工具会直接暴露给模型，无需 `tool_search`。这是纯配置修改，**与官方原版二进制（codex-official）兼容，无需重新编译**；代价是失去 V2 工具族（`followup_task` / `send_message` / `list_agents` / `interrupt_agent`）。
+
+结论：需要 V2 工具族时用 **v2 + 本补丁**；只想用原版二进制时用 **v1 + `supports_search_tool = false`** 配置法。
 
 ### OpenAI 父 -> 非 OpenAI 子（#36376）
 
