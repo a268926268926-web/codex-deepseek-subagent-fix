@@ -57,7 +57,7 @@ codex-ds exec ...   # non-interactive
 | Upstream version | Release tag | Status |
 |---|---|---|
 | 0.146.0 | `v0.146.0-deepseek.1` | Published |
-| 0.147.0 | `v0.147.0-deepseek.1` | In progress |
+| 0.147.0 | `v0.147.0-deepseek.1` | Published |
 
 `install.sh` installs the latest release by default; use `--version` to pin an upstream version. Run `codex-ds --version` to see which upstream version a binary corresponds to.
 
