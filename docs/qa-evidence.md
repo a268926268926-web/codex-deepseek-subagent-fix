@@ -30,6 +30,18 @@
    -> 子代理最终回答 `PONG2`
 3. 重复验证（spawn + followup）：`PONG` / `PONG2`
 
+## DeepSeek V4-Pro（2026-08-14，官方 GA 后）
+
+环境：`deepseek-v4-pro`，`wire_api = "responses"`，models.json `multi_agent_version = "v2"`（配置含 `model_catalog_json`）。
+
+1. Responses API：`deepseek-v4-pro` HTTP 200，正常返回；
+2. 补丁版 `codex` 普通 exec：返回 `OK`；
+3. 补丁版 `codex` spawn 子代理（任务 `Reply with exactly: OK`）：子代理最终返回 `OK`，主代理正确收到结果；
+4. 官方原版 `codex-official` 0.146.0（临时 CODEX_HOME + `env_key`，未改动官方配置）普通 exec：返回 `OK`；
+5. 官方原版 spawn 子代理：失败，日志报 `collab spawn failed: agent thread limit reached`，随后 wait 报 `an agent cannot interrupt itself`。
+
+结论：DeepSeek 官方已支持 v4-pro 主代理；第三方子代理仍需补丁版二进制。
+
 ## 自动化测试
 
 - `cargo test -p codex-core multi_agents`：88 passed

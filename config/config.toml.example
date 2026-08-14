@@ -1,7 +1,9 @@
 # ~/.codex/config.toml 的 DeepSeek 相关片段（脱敏模板）
 # 把 <YOUR_DEEPSEEK_API_KEY> 替换为真实密钥；不要提交真实配置
 
+# flash / pro 二选一（pro 自 2026-08-13 官方 GA 起可用）
 model = "deepseek-v4-flash"
+# model = "deepseek-v4-pro"
 model_provider = "deepseek"
 model_catalog_json = "~/.codex/models.json"
 

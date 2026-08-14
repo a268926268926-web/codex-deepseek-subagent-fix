@@ -1,114 +1,83 @@
-# Codex 第三方模型 Subagent 修复（DeepSeek）
+# Codex 第三方模型 Subagent 修复（DeepSeek Flash / Pro）
 
-让 DeepSeek 等非 OpenAI 模型在 Codex MultiAgentV2 下真正收到并执行子代理任务（`spawn_agent` / `followup_task` / `send_message`）。
+让 DeepSeek 等非 OpenAI 模型在 Codex MultiAgentV2 下真正收到并执行子代理任务（`spawn_agent` / `followup_task` / `send_message`）。仓库同时覆盖 DeepSeek V4-Pro 官方 GA（2026-08-13）之后的使用与测试情况。
 
-关联上游 issue：
-- [openai/codex#36586](https://github.com/openai/codex/issues/36586)：DeepSeek 子代理收不到 V2 任务（encrypted_content 被丢弃）
-- [openai/codex#36376](https://github.com/openai/codex/issues/36376)：OpenAI 父代理 -> 非 OpenAI 子代理（真密文，需上游解决，见下文）
-- [openai/codex#36382](https://github.com/openai/codex/issues/36382)：DeepSeek 官方配置下工具静默不可用（同族问题）
-- [openai/codex#37822](https://github.com/openai/codex/issues/37822)：最新同问题报告（0.147/Desktop，任务仅在 encrypted_content 中被丢弃）
-- [openai/codex#37475](https://github.com/openai/codex/issues/37475)：Bedrock 0.147 直接拒绝 agent_message（同族协议假设问题）
-- [openai/codex#37197](https://github.com/openai/codex/issues/37197)：社区 opt-in 明文投递方案（覆盖 OpenAI 父 -> 第三方子的上游候选）
-- [openai/codex#38365](https://github.com/openai/codex/issues/38365)：跨 provider 会话交接需归一化工具历史（历史回放同族）
+## 本仓库内容
 
-### 其他仓库中的同类问题
-
-- [deepseek-ai/awesome-deepseek-agent#335](https://github.com/deepseek-ai/awesome-deepseek-agent/issues/335)：DeepSeek 官方仓库反馈接入 Codex 后 subagent 初始化问题，同为 `agent_message`/`encrypted_content` 不兼容
-- [BigStrongSun/ccswitchmulti#18](https://github.com/BigStrongSun/ccswitchmulti/issues/18)：明文被写入 `encrypted_content` 导致历史回放解密失败（5 次重连）
-- [router-for-me/CLIProxyAPI#4801](https://github.com/router-for-me/CLIProxyAPI/issues/4801)：代理层 Responses 转发跳过 `agent_message -> message` 转换
-- [NousResearch/hermes-agent#32617](https://github.com/NousResearch/hermes-agent/issues/32617) / [openai/codex#17541](https://github.com/openai/codex/issues/17541)：换 provider/模型后回放历史密文导致 HTTP 400
-- [zed-industries/zed#62299](https://github.com/zed-industries/zed/issues/62299)：Zed 编辑器接入 Codex + DeepSeek 时子代理任务同样被丢弃
-- [NOirBRight/CodexHub#394](https://github.com/NOirBRight/CodexHub/issues/394)：第三方网关在 Chat Completions 上实现 Collaboration V2，需处理 `agent_message` 语义
-- [weijunswj/ai-agent-toolkit#341](https://github.com/weijunswj/ai-agent-toolkit/issues/341)：GPT 与 DeepSeek 互派子代理的混合 provider 设计（跨 provider 方向仍受 #36376 阻塞）
-- [MetaFARS/codex-relay#60](https://github.com/MetaFARS/codex-relay/issues/60)：relay 原样透传 `encrypted_content` 导致 Chat Completions 400
-- [duolahypercho/codex-router#183](https://github.com/duolahypercho/codex-router/pull/183)：路由器启用 DeepSeek v2 子代理（非 OpenAI 父场景明文可映射）
-- [fish2lab/DSCodex#17](https://github.com/fish2lab/DSCodex/issues/17)：DeepSeek 切 GPT 后明文 reasoning 历史导致 400（历史回放同族）
-
-共同点：`agent_message`/`encrypted_content` 是 Codex 私有协议假设；社区修复分三层：核心投递（本补丁）、代理转换、换 provider 时剥离历史密文。
+- [补丁](patches/codex-core-non-openai-subagent-payload.patch)：codex-cli 0.146.0 源码补丁，共 2 个核心文件改动
+- [配置模板](config/config.toml.example)：DeepSeek flash / pro 脱敏配置（config.toml、models.json）
+- [QA 证据](docs/qa-evidence.md)：flash / pro 真实会话测试记录
 
 ## 症状
 
-codex-cli 0.146.0 + DeepSeek（`deepseek-v4-flash`，`wire_api = "responses"`，models.json 中 `multi_agent_version = "v2"`）：
+codex-cli 0.146.0 + DeepSeek（`wire_api = "responses"`，models.json 中 `multi_agent_version = "v2"`）：
 
-1. 主代理调用 `collaboration__spawn_agent` 派生子代理；
-2. 子代理正常初始化，但回复“没有收到任务”，从不执行任务；
-3. `followup_task` 同样无效。
+1. 主代理 `spawn_agent` 派生子代理，子代理正常初始化但回复“没有收到任务”，从不执行；
+2. `followup_task` 同样无效。
 
 ## 根因
 
-V2 的子代理任务通过 `InterAgentCommunication` 投递，模型请求中以 `agent_message` item 携带（任务文本放在 `encrypted_content` 里）。OpenAI 端点会在服务端解密，而 DeepSeek 的 Responses 实现不能消费该内容，任务对模型不可见。
+V2 的子代理任务通过 `InterAgentCommunication` 投递，请求中以 `agent_message` item 携带，任务文本放在 `encrypted_content`。OpenAI 端点在服务端解密，而 DeepSeek 的 Responses 实现不消费该内容，任务对模型不可见；改为普通 `user` 消息投递（V1 方式）后，DeepSeek 可稳定执行。
 
-进一步实测（见 docs/qa-evidence.md）：
-- 即使把 `encrypted_content` 折叠成明文 `input_text`，DeepSeek 仍可能忽略整个 `agent_message` item；
-- 任务以普通 `user` 消息投递时（V1 方式），DeepSeek 能稳定执行。
+上游 issue：[#36586](https://github.com/openai/codex/issues/36586)（主报告）；同族问题 #36382、#37197、#36376（OpenAI 父 -> 非 OpenAI 子，需上游解决）。其他仓库中的同类报告（Zed、代理网关、路由器等）本质相同，不再逐一展开。
 
-## 修复方案（本地补丁）
+## 修复方案
 
-对齐 V1 的投递方式：**非 OpenAI provider 下，V2 的 spawn / followup_task / send_message 直接把任务作为普通 user 消息（`UserInput`）发送给子代理；OpenAI 路径保持 V2 加密通信不变。**
+非 OpenAI provider 下，V2 的 spawn / followup_task / send_message 直接把任务作为普通 user 消息（`UserInput::Text`）发送给子代理；OpenAI 路径保持 V2 加密通信不变。
 
-改动（基于 openai/codex commit `2b5bdcf`，即 0.146.0 源码）：
+- `spawn.rs`：改用 `spawn_agent_with_metadata` + `UserInput::Text`
+- `message_tool.rs`：改用 `send_input` + `UserInput::Text`
 
-- `codex-rs/core/src/tools/handlers/multi_agents_v2/spawn.rs`：非 OpenAI 时改用 `spawn_agent_with_metadata` + `UserInput::Text`
-- `codex-rs/core/src/tools/handlers/multi_agents_v2/message_tool.rs`：非 OpenAI 时 `send_message` / `followup_task` 改用 `send_input` + `UserInput::Text`
-
-补丁文件：[patches/codex-core-non-openai-subagent-payload.patch](patches/codex-core-non-openai-subagent-payload.patch)
+补丁基于 openai/codex commit `2b5bdcf`（0.146.0）。
 
 ## 构建与安装
 
 ```bash
-# 1. 准备源码（或直接 git apply 补丁到 openai/codex 对应 commit）
 git clone https://github.com/openai/codex.git
 cd codex
 git checkout 2b5bdcf67547860f2e5c5a605009a70026796b2b
 git apply /path/to/codex-core-non-openai-subagent-payload.patch
-
-# 2. 构建（需要 Rust stable；首次约 10-15 分钟）
 cd codex-rs
 cargo build --release -p codex-cli
-
-# 3. 备份并替换本机二进制（npm 安装布局示例）
-cp <npm>/@openai/codex/node_modules/@openai/codex-linux-x64/vendor/x86_64-unknown-linux-musl/bin/codex codex-vendored-backup.bin
-install -m 755 target/release/codex <npm>/@openai/codex/node_modules/@openai/codex-linux-x64/vendor/x86_64-unknown-linux-musl/bin/codex
-
-# 4. 验证
-codex --version
 ```
 
-回滚：用备份二进制替换回去即可。源码构建的 `codex --version` 显示 `0.0.0` 属正常（正式发布流程才注入版本号），功能等同对应源码版本。
+备份原二进制后替换（npm 安装布局：`@openai/codex/.../vendor/x86_64-unknown-linux-musl/bin/codex`）。源码构建的 `codex --version` 显示 `0.0.0` 属正常；回滚用备份二进制。
 
 ## 验证结果
 
-- `cargo test -p codex-core multi_agents`：88 项通过；`cargo fmt --check` / `cargo clippy -p codex-core --tests` 干净
-- 真实 DeepSeek 会话（deepseek-v4-flash）：
-  - `spawn_agent` 任务 `Reply with exactly the single word PONG` -> 子代理回复 `PONG`
-  - `followup_task` 追加 `Reply with exactly the single word PONG2` -> 回复 `PONG2`
+**Flash（2026-08-03）**：`spawn_agent` -> `PONG`，`followup_task` -> `PONG2`，重复验证通过；`cargo test -p codex-core multi_agents` 88 项通过，fmt / clippy 干净。
 
-详见 [docs/qa-evidence.md](docs/qa-evidence.md)。
+**Pro（2026-08-14，官方 GA 后）**：
+
+- Responses API：`deepseek-v4-pro` HTTP 200，正常返回
+- 补丁版 `codex`：普通 exec 正常；spawn 子代理成功，子代理返回 `OK`
+- 官方原版 `codex-official` 0.146.0：普通 exec 正常（需 `model_catalog_json` + provider 配置）；spawn 子代理失败，报 `collab spawn failed: agent thread limit reached`
+
+## 与官方原版二进制的兼容
+
+- 主代理：官方原版可直接使用 flash / pro（按官方一键脚本或本仓库配置模板）
+- 子代理：官方原版仍不可用（spawn 报 thread limit），需要本补丁
+- 不想编译的替代方案：models.json 设 `multi_agent_version = "v1"` 且 `supports_search_tool = false`，官方原版可暴露 V1 工具族；代价是失去 V2 工具族（`followup_task` / `send_message` / `list_agents` / `interrupt_agent`）
+- DeepSeek 官方 setup 脚本生成的 models.json 仍是 v2：解决主代理配置，不解决子代理投递
+
+## 配置模板
+
+- `config.toml.example`：默认 flash，注释一行即可切 pro
+- `models.json.example`：flash + pro 关键字段
+- 本仓库不含任何密钥或私人配置，请替换为自己的 API key
 
 ## 踩坑记录
 
-### V1 与 V2 的工具族差异
+V1 / V2 工具族差异：
 
 | 版本 | 命名空间 | 工具 |
 |---|---|---|
 | V1 | `multi_agent_v1` | `spawn_agent`、`send_input`、`resume_agent`、`wait_agent`、`close_agent` |
 | V2 | `collaboration` | `spawn_agent`、`send_message`、`followup_task`、`wait_agent`、`interrupt_agent`、`list_agents` |
 
-### models.json 改 v1 的可用变体
+- 仅改 `multi_agent_version = "v1"` 时，V1 工具族注册为 Deferred，需 `tool_search` 发现；DeepSeek 无法调用 `tool_search`（与 #36382 同族），需同时设 `supports_search_tool = false`
+- OpenAI 父 -> 非 OpenAI 子（#36376）：spawn message 是真密文，本地无法解密，本补丁不适用，需上游解决
 
-仅改 `multi_agent_version = "v1"` 时，V1 工具族被注册为 **Deferred**，须先调用 `tool_search` 才能载入；而 deepseek-v4-flash 无法识别/调用 `tool_search`（与 #36382 同族问题），V1 工具不可达。
+## 许可
 
-社区补充的可用变体（见 [#36586 评论](https://github.com/openai/codex/issues/36586)）：同时设置 `supports_search_tool = false`，V1 工具会直接暴露给模型，无需 `tool_search`。这是纯配置修改，**与官方原版二进制（codex-official）兼容，无需重新编译**；代价是失去 V2 工具族（`followup_task` / `send_message` / `list_agents` / `interrupt_agent`）。
-
-结论：需要 V2 工具族时用 **v2 + 本补丁**；只想用原版二进制时用 **v1 + `supports_search_tool = false`** 配置法。
-
-### OpenAI 父 -> 非 OpenAI 子（#36376）
-
-OpenAI 父代理返回的 spawn `message` 是**真密文**（`encrypted_function_args = null`），本地无法解密，本补丁不适用。需要上游在 OpenAI 侧解决明文投递契约。
-
-## 配置模板
-
-- [config/config.toml.example](config/config.toml.example)：DeepSeek provider 配置（密钥用占位符）
-- [config/models.json.example](config/models.json.example)：models.json 中 deepseek 条目的关键字段示例
-
-本仓库不含任何密钥或私人配置；请参考模板自行填入自己的 API key。
+Apache-2.0

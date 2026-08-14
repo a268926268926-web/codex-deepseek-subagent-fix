@@ -27,6 +27,7 @@
 }
 
 # 注意：
+# - flash / pro 均已获 DeepSeek 官方支持，pro 自 2026-08-13 GA 起可用于 Codex
 # - 保持 multi_agent_version = "v2"（配合本补丁可用；改 v1 后工具族会被
 #   tool_search 隐藏，DeepSeek 模型无法发现，见 README 踩坑记录）
 # - 官方 setup 脚本生成的条目还包含 model_messages / base_instructions 等字段，
