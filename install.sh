@@ -12,13 +12,13 @@ usage() {
   cat >&2 <<'EOF'
 Usage: install.sh [--version VERSION] [--install-dir DIR] [--name CMD]
 
-安装用于 DeepSeek 子代理的 Codex CLI（打补丁二进制）。
-默认安装最新版本到 ~/.local/bin/codex-ds。
+Install the patched Codex CLI for DeepSeek subagents.
+Installs the latest version to ~/.local/bin/codex-ds by default.
 
-选项：
-  --version VERSION   上游版本号（如 0.146.0），默认 latest
-  --install-dir DIR   安装目录，默认 ~/.local/bin
-  --name CMD          命令名，默认 codex-ds
+Options:
+  --version VERSION   upstream version (e.g. 0.146.0), default latest
+  --install-dir DIR   install directory, default ~/.local/bin
+  --name CMD          command name, default codex-ds
 EOF
 }
 
@@ -71,12 +71,12 @@ echo "Installed: ${INSTALL_DIR}/${CMD_NAME}"
 echo
 case ":$PATH:" in
   *":${INSTALL_DIR}:"*) ;;
-  *) echo "注意：${INSTALL_DIR} 不在 PATH 中，请加入 PATH 或使用完整路径。" ;;
+  *) echo "Note: ${INSTALL_DIR} is not on PATH. Add it to PATH or use the full path." ;;
 esac
-echo "启动：${CMD_NAME}          # TUI"
-echo "      ${CMD_NAME} exec ... # 非交互"
+echo "Launch: ${CMD_NAME}          # TUI"
+echo "        ${CMD_NAME} exec ... # non-interactive"
 echo
-echo "首次使用请先配置 DeepSeek（二选一）："
-echo "  1) 官方一键脚本（flash / pro 都支持）"
+echo "Configure DeepSeek before first use (pick one):"
+echo "  1) Official one-click script (supports flash / pro)"
 echo "     curl -fsSL https://cdn.deepseek.com/api-docs/codex-deepseek-setup-en.sh | bash"
-echo "  2) 或参考仓库 config/ 下的脱敏模板自行填写"
+echo "  2) Or use the templates under config/"
