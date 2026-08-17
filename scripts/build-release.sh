@@ -60,7 +60,9 @@ git -C "${source_dir}" apply "${patch_file}"
 
 (
   cd "${source_dir}/codex-rs"
-  cargo +"${RUST_TOOLCHAIN}" build --locked --release -p codex-cli
+  # Cargo 1.95.0 normalizes the upstream 0.147.0 lockfile. This occurs in the
+  # disposable clone; the repository's pinned source commit remains unchanged.
+  cargo +"${RUST_TOOLCHAIN}" build --release -p codex-cli
 )
 
 mkdir -p "$(dirname "${output_path}")"

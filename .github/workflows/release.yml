@@ -23,7 +23,7 @@ jobs:
       RELEASE_TAG: ${{ inputs.release_tag || github.ref_name }}
       ASSET: codex-deepseek-subagent-fix-linux-x86_64
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v5
 
       - name: Install pinned Rust toolchain
         run: rustup toolchain install 1.95.0 --profile minimal
