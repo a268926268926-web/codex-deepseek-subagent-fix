@@ -67,6 +67,8 @@ The release binary is built from an exact OpenAI Codex tag and a public patch.
 For 0.147.0, the source base is [`rust-v0.147.0`](patches/0.147.0/UPSTREAM.md)
 at commit `be6e8eac029b183056b7e4402879f15d2c85f61b`; the complete change is
 [`0001-deliver-non-openai-subagent-tasks-as-user-input.patch`](patches/0.147.0/0001-deliver-non-openai-subagent-tasks-as-user-input.patch).
+The build strips upstream's packaging-only debug symbols before publishing the
+Linux executable.
 
 To build it yourself on Linux x86_64 with Rust and Git installed:
 

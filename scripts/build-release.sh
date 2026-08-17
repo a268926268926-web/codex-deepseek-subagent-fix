@@ -29,7 +29,7 @@ while [ "$#" -gt 0 ]; do
   esac
 done
 
-for required_command in cargo git install rustup; do
+for required_command in cargo git install rustup strip; do
   command -v "${required_command}" >/dev/null 2>&1 || {
     echo "missing required command: ${required_command}" >&2
     exit 1
@@ -67,4 +67,7 @@ git -C "${source_dir}" apply "${patch_file}"
 
 mkdir -p "$(dirname "${output_path}")"
 install -m 755 "${source_dir}/codex-rs/target/release/codex" "${output_path}"
+# Upstream keeps release symbols for its own packaging process. Release only the
+# stripped executable; this matches the intended distribution artifact.
+strip --strip-unneeded "${output_path}"
 sha256sum "${output_path}"
