@@ -17,7 +17,7 @@ Codex MultiAgentV2 sends subagent tasks inside the `encrypted_content` of an `ag
 ## ✨ Features
 
 - ✅ Supports `deepseek-v4-flash` and `deepseek-v4-pro` for both the main agent and subagents
-- 🛡️ Ships a Linux x86_64 prebuilt binary with SHA256 verification
+- 🛡️ Publishes SHA256 checksums, GitHub build provenance, and keyless `cosign` signatures
 - 🔌 Runs as a standalone `codex-ds` command without interfering with your existing Codex
 
 ## 🚀 One-line install
@@ -60,6 +60,47 @@ codex-ds exec ...   # non-interactive
 | 0.147.0 | `v0.147.0-deepseek.1` | Published |
 
 `install.sh` installs the latest release by default; use `--version` to pin an upstream version. Run `codex-ds --version` to see which upstream version a binary corresponds to.
+
+## Source and verification
+
+The release binary is built from an exact OpenAI Codex tag and a public patch.
+For 0.147.0, the source base is [`rust-v0.147.0`](patches/0.147.0/UPSTREAM.md)
+at commit `be6e8eac029b183056b7e4402879f15d2c85f61b`; the complete change is
+[`0001-deliver-non-openai-subagent-tasks-as-user-input.patch`](patches/0.147.0/0001-deliver-non-openai-subagent-tasks-as-user-input.patch).
+
+To build it yourself on Linux x86_64 with Rust and Git installed:
+
+```bash
+git clone https://github.com/CCanxue/codex-deepseek-subagent-fix.git
+cd codex-deepseek-subagent-fix
+scripts/build-release.sh
+```
+
+Every CI-built release includes `SHA256SUMS`, a keyless Sigstore signature
+(`.sig`) and certificate (`.pem`). Verify a downloaded release before using it:
+
+```bash
+sha256sum -c SHA256SUMS --ignore-missing
+cosign verify-blob \
+  --certificate codex-deepseek-subagent-fix-linux-x86_64.pem \
+  --signature codex-deepseek-subagent-fix-linux-x86_64.sig \
+  --certificate-identity-regexp 'https://github.com/CCanxue/codex-deepseek-subagent-fix/.github/workflows/release.yml@refs/tags/.*' \
+  --certificate-oidc-issuer https://token.actions.githubusercontent.com \
+  codex-deepseek-subagent-fix-linux-x86_64
+```
+
+GitHub also stores a build provenance attestation for the binary. With the GitHub
+CLI installed, verify it using:
+
+```bash
+gh attestation verify codex-deepseek-subagent-fix-linux-x86_64 \
+  --repo CCanxue/codex-deepseek-subagent-fix
+```
+
+The current published releases predate this workflow and therefore do not have
+the signature or attestation assets. The workflow currently audits only
+`v0.147.0-deepseek.*`; add and validate a new pinned patch before publishing a
+different upstream version.
 
 ## ❓ FAQ
 

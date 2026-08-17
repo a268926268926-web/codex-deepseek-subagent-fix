@@ -1,0 +1,66 @@
+name: Build, attest, and sign release
+
+on:
+  push:
+    tags:
+      - 'v0.147.0-deepseek.*'
+  workflow_dispatch:
+    inputs:
+      release_tag:
+        description: Existing release tag to update
+        required: true
+        type: string
+
+permissions:
+  attestations: write
+  contents: write
+  id-token: write
+
+jobs:
+  release:
+    runs-on: ubuntu-22.04
+    env:
+      RELEASE_TAG: ${{ inputs.release_tag || github.ref_name }}
+      ASSET: codex-deepseek-subagent-fix-linux-x86_64
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install pinned Rust toolchain
+        run: rustup toolchain install 1.95.0 --profile minimal
+
+      - name: Confirm release tag matches the audited patch
+        run: |
+          case "${RELEASE_TAG}" in
+            v0.147.0-deepseek.*) ;;
+            *)
+              echo "${RELEASE_TAG} is not supported by the audited 0.147.0 patch" >&2
+              exit 1
+              ;;
+          esac
+
+      - name: Build from pinned upstream source
+        run: scripts/build-release.sh --output "dist/${ASSET}"
+
+      - name: Create checksum
+        run: |
+          cd dist
+          sha256sum "${ASSET}" > SHA256SUMS
+
+      - uses: sigstore/cosign-installer@v3
+
+      - name: Sign binary with GitHub OIDC
+        run: |
+          cosign sign-blob --yes \
+            --output-signature "dist/${ASSET}.sig" \
+            --output-certificate "dist/${ASSET}.pem" \
+            "dist/${ASSET}"
+
+      - name: Attest build provenance
+        uses: actions/attest-build-provenance@v2
+        with:
+          subject-path: dist/${{ env.ASSET }}
+
+      - name: Upload verified release assets
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release upload "${RELEASE_TAG}" dist/* --clobber
