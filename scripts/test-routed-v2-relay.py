@@ -6,9 +6,13 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 import importlib.util
 import json
 from pathlib import Path
+import subprocess
+import sys
+import tempfile
 import threading
 from types import SimpleNamespace
 import unittest
+from unittest import mock
 import urllib.request
 
 spec = importlib.util.spec_from_file_location("relay", Path(__file__).with_name("routed-v2-relay.py"))
@@ -17,6 +21,63 @@ spec.loader.exec_module(relay)
 helper_spec = importlib.util.spec_from_file_location("recovery", Path(__file__).with_name("recover-v2-tasks.py"))
 recovery_helper = importlib.util.module_from_spec(helper_spec)
 helper_spec.loader.exec_module(recovery_helper)
+launcher_spec = importlib.util.spec_from_file_location("launcher", Path(__file__).with_name("launch-routed-codex.py"))
+launcher = importlib.util.module_from_spec(launcher_spec)
+launcher_spec.loader.exec_module(launcher)
+
+
+class CatalogContractTests(unittest.TestCase):
+    def test_routing_preserves_code_mode_and_native_model_metadata(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            directory = Path(temporary)
+            source = directory / "source.json"
+            for mode in ("code_mode", "code_mode_only"):
+                with self.subTest(mode=mode):
+                    original = {"models": [
+                        {"slug": "gpt-5.6-sol", "tool_mode": mode,
+                         "supports_search_tool": True, "use_responses_lite": True,
+                         "multi_agent_version": "v2", "shell_type": "shell_command",
+                         "base_instructions": "Mapped instructions"},
+                        {"slug": "native-test", "tool_mode": "code_mode_only",
+                         "supports_search_tool": True, "use_responses_lite": True,
+                         "base_instructions": "Native instructions"}]}
+                    source.write_text(json.dumps(original))
+                    output = directory / f"{mode}.json"
+                    subprocess.run([sys.executable, str(Path(__file__).with_name("make-routed-catalog.py")),
+                                    "--source", str(source), "--output", str(output)],
+                                   capture_output=True, text=True, check=True)
+                    expected = copy.deepcopy(original)
+                    expected["models"][0].update(supports_search_tool=False, use_responses_lite=False,
+                                                  multi_agent_version="v2")
+                    self.assertEqual(json.loads(output.read_text()), expected)
+                    self.assertEqual(json.loads(source.read_text()), original)
+
+    def test_launcher_accepts_code_mode_and_rejects_missing_exec_mode(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            directory = Path(temporary)
+            original = directory / "codex"
+            app = directory / "app"
+            for path in (original, app):
+                path.write_text("test executable")
+                path.chmod(0o700)
+            (directory / "config.toml").write_text(
+                'model_provider = "custom"\n[model_providers.custom]\n'
+                'base_url = "https://example.invalid/v1"\nwire_api = "responses"\n')
+            args = SimpleNamespace(codex_original=original, app=app, catalog=directory / "models.json",
+                                   alias=["gpt-5.6-sol"], recovery_map=directory / "missing-map.json")
+            version = SimpleNamespace(stdout=f"codex-cli {launcher.VERSION}\n")
+            with mock.patch.dict("os.environ", {"CODEX_HOME": str(directory)}), \
+                    mock.patch.object(launcher.subprocess, "run", return_value=version):
+                for mode in ("code_mode", "code_mode_only"):
+                    args.catalog.write_text(json.dumps({"models": [
+                        {"slug": "gpt-5.6-sol", "tool_mode": mode, "multi_agent_version": "v2"}]}))
+                    self.assertEqual(launcher.validate(args), ("custom", "https://example.invalid/v1", 0))
+                args.catalog.write_text(json.dumps({"models": [
+                    {"slug": "gpt-5.6-sol", "tool_mode": "direct", "multi_agent_version": "v2"}]}))
+                with self.assertRaisesRegex(ValueError, "Code Mode"):
+                    launcher.validate(args)
+            self.assertIn("features.code_mode_host=true",
+                          launcher.wrapper_text(original, "custom", "http://127.0.0.1:1", args.catalog))
 
 
 class ContractTests(unittest.TestCase):

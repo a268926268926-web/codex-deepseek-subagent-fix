@@ -35,6 +35,12 @@ blocks tool-call output before it reaches the CLI.
 Requires Linux, Python 3.11+, the existing original CLI and Responses provider.
 Do not place histories, credentials or recovery maps in this public repository.
 
+Preserve the routed model's original `code_mode` or `code_mode_only` tool mode.
+The catalog generator changes the transport/search compatibility fields, not that
+mode. Forcing `direct` can pass CLI shell tests while removing the desktop's
+`functions.exec` entry point. The launcher rejects such a catalog and explicitly
+enables `features.code_mode_host` for both desktop and CLI invocations.
+
 ```bash
 mkdir -m 700 /absolute/private/bundle
 cp scripts/{routed-v2-relay.py,recover-v2-tasks.py,launch-routed-codex.py,launch-codex-v2.sh} \
@@ -85,11 +91,14 @@ latency across repeated tool rounds. Requests are parsed for model selection;
 routed SSE events receive JSON processing and immediate flushing. Replies remain
 streamed. Live TPS and peak load memory have not been benchmarked; CLI completion
 times include model work, tools and recovery and are not output-rate measurements.
-Routed direct tool descriptions can also increase input tokens compared with
-native code-mode tool exposure. This relay is an additional local process and
+The routed model retains Code Mode. Tool search is disabled for compatibility,
+so configured tools are described inside `exec` instead of being discovered
+lazily; this can increase input tokens compared with native deferred tools.
+This relay is an additional local process and
 failure point, and the launcher checks the exact verified runtime version.
 
-Fourteen contract tests check native body/gzip preservation, HTTP mapped
+Sixteen contract tests check preserved Code Mode and native catalog metadata,
+launcher mode validation, native body/gzip preservation, HTTP mapped
 input/stream conversion, attribution and IDs, unchanged reasoning, ciphertext
 rejection, bounded decompression, disk-write failure and the recovery tool guard:
 
@@ -104,6 +113,15 @@ idle queued messages; routed parent → routed child; routed parent → native
 See [acceptance](acceptance-0162.md). These establish the tested capabilities;
 every connector operation and desktop behavior after activation are separate
 coverage boundaries.
+
+After desktop activation, the original mapped sidebar chat continued its history
+and delivered/followed up with a mapped child, but formal `exec` was absent with
+the earlier `direct` catalog. A Code Mode control passed formal file reading and
+shell arithmetic, and an ephemeral original app-server passed mapped parent/child
+file reading, `apply_patch`, same-child follow-up and independent parent checks.
+The revised catalog fixes that registration condition. A running desktop may
+retain its loaded catalog, so normally relaunch it with the updated bundle before
+claiming that its original mapped sidebar tools have passed.
 
 Authentication headers are forwarded in memory to the configured HTTPS service.
 Redirects are disabled. Access logs, task content, headers and raw responses are

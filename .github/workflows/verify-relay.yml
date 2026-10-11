@@ -4,12 +4,14 @@ on:
     paths:
       - 'scripts/*v2*.py'
       - 'scripts/launch-routed-codex.py'
+      - 'scripts/make-routed-catalog.py'
       - 'scripts/launch-codex-v2.sh'
       - '.github/workflows/verify-relay.yml'
   pull_request:
     paths:
       - 'scripts/*v2*.py'
       - 'scripts/launch-routed-codex.py'
+      - 'scripts/make-routed-catalog.py'
       - 'scripts/launch-codex-v2.sh'
       - '.github/workflows/verify-relay.yml'
 jobs:

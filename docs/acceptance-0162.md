@@ -19,8 +19,8 @@ The preferred mixed-model path uses the original packaged CLI plus the
 | Routed parent → native gpt-6-luna / max | Passed, 45.5 s; native child used a formal tool and returned 391; verification follow-up passed |
 | Old paginated child history | Completed, 12.2 s; task map used without changing the copied five ciphertexts |
 | Old paginated main history | Completed, 11.4 s; original model/effort, fork, completed work and preservation goal read back |
-| Relay contracts | Fourteen passed; includes real loopback HTTP preservation/conversion, recovery tool-call rejection, bounded gzip and failed-cache-write behavior |
-| Original installation/configuration | Packaged executable and config SHA-256 unchanged |
+| Relay/catalog contracts | Sixteen passed; includes preserved Code Mode/native model metadata, launcher mode validation, real loopback HTTP preservation/conversion, recovery tool-call rejection, bounded gzip and failed-cache-write behavior |
+| Installation/configuration before desktop activation | Packaged executable and config SHA-256 unchanged at that checkpoint |
 | Delivered launcher CLI path | Passed, 20.7 s; native parent → routed child; owned relay and temporary wrapper cleaned up |
 | Guarded fresh native parent → routed child | Passed, 51.0 s; this run did not need an uncached ciphertext readback |
 | Final guarded old-communication recovery | Five communications, including three MESSAGE items, recovered twice with identical texts matching the earlier verified map; original built-in native catalog |
@@ -38,6 +38,33 @@ compatibility condition; it does not prove a general service outage. Automatic
 recovery now uses the built-in catalog independently of the desktop wrapper.
 Recovery requests carry no tools, including Responses-Lite additional tools;
 fault-injected upstream tool calls are rejected before CLI dispatch.
+
+## Desktop tool-mode correction
+
+The activated desktop used the delivered original-CLI wrapper and loopback relay.
+Its existing mapped sidebar chat resumed prior history and completed a mapped-child
+spawn/follow-up in 104.3 seconds, but the formal `functions.exec` tool was absent.
+That run did not read its random fixture and is a partial failure, not full desktop
+tool acceptance. Native Luna in the same desktop successfully used formal exec.
+
+An isolated request-metadata comparison established that the earlier `direct`
+catalog registers direct `exec_command` but does not register Code Mode `exec`.
+With `code_mode_only`, the original runtime advertised its freeform `exec` tool
+and nested formal shell. A real routed-model control read the exact 44-byte random
+fixture and returned shell arithmetic 391 in 20.5 seconds.
+
+An ephemeral original app-server with a desktop client name then completed a
+routed parent → routed child/max chain in 80.5 seconds: exact fixture read,
+official `apply_patch` creation, same-child follow-up, shell arithmetic, and
+independent parent verification of the proof. The parent initially tried a nested
+collaboration invocation, which failed; its direct retry succeeded and created
+exactly one child. Eight independent local outcome checks passed.
+
+The generator now preserves the original Code Mode and the wrapper explicitly
+enables its host. The running user's original mapped sidebar still needs a check
+with that updated catalog loaded. These controls do not establish every connector
+operation. The installed original CLI remained byte-identical; the user's config
+hash changed after app/user activity and is not claimed unchanged after activation.
 
 ## Optional source patch and recovery controls
 
@@ -80,4 +107,5 @@ Recovery is a model-mediated readback of user task communications, not a local
 decryptor or a byte-for-byte cryptographic export. It needs a compatible service
 and may fail after backend/key-scope changes. Private ciphertext, histories,
 recovered task maps, credentials and raw gateway logs are excluded from this repo.
-Desktop activation and behavior after relaunch are not covered by CLI acceptance.
+CLI acceptance alone does not establish desktop behavior after relaunch; the
+desktop failure and subsequent Code Mode controls are recorded separately above.

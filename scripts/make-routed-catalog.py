@@ -13,8 +13,9 @@ catalog = json.loads(Path(args.source).read_text())
 matches = [model for model in catalog["models"] if model["slug"] == args.model]
 if len(matches) != 1:
     raise SystemExit(f"Expected exactly one catalog entry for {args.model}")
+if matches[0].get("tool_mode") not in {"code_mode", "code_mode_only"}:
+    raise SystemExit(f"Expected a Code Mode entry for {args.model}; direct mode hides desktop exec")
 matches[0].update(
-    tool_mode="direct",
     supports_search_tool=False,
     use_responses_lite=False,
     multi_agent_version="v2",

@@ -21,6 +21,10 @@ The `codex-0.162-v2-plaintext` branch adds an opt-in adaptation pinned to
 stays unchanged, and only the explicit routed alias receives compatibility changes.
 Live tests passed native parent → routed child, routed parent → native Luna/max,
 formal shell/file/MCP tools, queued follow-up and old paginated-history recovery.
+The routed catalog retains Code Mode so the desktop keeps its formal `exec`
+entry point; the launcher enables the Code Mode host. An earlier direct catalog
+lost that desktop tool, and the correction passed isolated original app-server
+parent/child file, patch and follow-up controls.
 See the [acceptance record](docs/acceptance-0162.md).
 
 The optional [source patch](docs/0.162-plaintext.md) has a process-wide switch and
@@ -28,7 +32,7 @@ is intended for wholly routed invocations. It is not the mixed-model desktop pat
 Both modes can replay old tasks through a private local map produced by native
 compatible-service task readback; saved ciphertext and visible history stay intact.
 Native recovery uses the original built-in model catalog, with tools removed and
-tool-call output blocked before CLI dispatch. Fourteen relay contracts and two
+tool-call output blocked before CLI dispatch. Sixteen relay/catalog contracts and two
 matching reads of five old task/queued communications passed locally.
 The old upstream `install.sh` still selects 0.146/0.147 releases and does not
 install this adaptation. No private history, map or credential is included here.

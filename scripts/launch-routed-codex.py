@@ -39,8 +39,10 @@ def validate(args):
     catalog = json.loads(args.catalog.read_text())
     for alias in args.alias:
         matches = [model for model in catalog["models"] if model["slug"] == alias]
-        if len(matches) != 1 or matches[0].get("tool_mode") != "direct" or matches[0].get("multi_agent_version") != "v2":
-            raise ValueError(f"Catalog needs one direct V2 entry for {alias}")
+        if (len(matches) != 1
+                or matches[0].get("tool_mode") not in {"code_mode", "code_mode_only"}
+                or matches[0].get("multi_agent_version") != "v2"):
+            raise ValueError(f"Catalog needs one Code Mode V2 entry for {alias}")
     cached = 0
     if args.recovery_map.exists():
         if args.recovery_map.stat().st_size > 4 * 1024 * 1024:
@@ -70,6 +72,7 @@ def desktop_running(app):
 def wrapper_text(original, provider, url, catalog):
     overrides = [f"model_providers.{provider}.base_url={json.dumps(url)}",
                  f"model_catalog_json={json.dumps(str(catalog))}",
+                 "features.code_mode_host=true",
                  "features.multi_agent=true", "features.multi_agent_v2.enabled=true",
                  "features.multi_agent_v2.hide_spawn_agent_metadata=false",
                  "features.multi_agent_v2.expose_spawn_agent_model_overrides=true",
