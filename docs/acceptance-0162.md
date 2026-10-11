@@ -44,9 +44,12 @@ fault-injected upstream tool calls are rejected before CLI dispatch.
 The activated desktop's argv referenced the delivered wrapper and loopback relay;
 later effective-config and socket checks showed those overrides were discarded.
 Its existing mapped sidebar chat resumed prior history and completed a mapped-child
-spawn/follow-up in 104.3 seconds, but the formal `functions.exec` tool was absent.
+spawn/follow-up in 104.3 seconds, but could not complete formal `functions.exec`.
 That run did not read its random fixture and is a partial failure, not full desktop
-tool acceptance. Native Luna in the same desktop successfully used formal exec.
+tool acceptance. Its model-reported registration diagnosis was not proof of the
+live registry contents. Native Luna in the same desktop successfully used formal
+exec. The direct-catalog control below is an isolated result, not evidence that
+the actual Desktop had loaded that catalog.
 
 An isolated request-metadata comparison established that the earlier `direct`
 catalog registers direct `exec_command` but does not register Code Mode `exec`.

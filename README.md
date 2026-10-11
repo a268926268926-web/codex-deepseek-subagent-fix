@@ -22,9 +22,10 @@ stays unchanged, and only the explicit routed alias receives compatibility chang
 Live tests passed native parent → routed child, routed parent → native Luna/max,
 formal shell/file/MCP tools, queued follow-up and old paginated-history recovery.
 The routed catalog retains Code Mode so the desktop keeps its formal `exec`
-entry point; the launcher enables the Code Mode host. An earlier direct catalog
-lost that desktop tool, and the correction passed isolated original app-server
-parent/child file, patch and follow-up controls.
+entry point; the launcher enables the Code Mode host. An isolated direct-catalog
+control did not register that tool; the Code Mode correction passed isolated
+original app-server parent/child file, patch and follow-up controls. These
+controls did not establish which catalog the actual Desktop process had loaded.
 Desktop also appends plugin `-c` options after `app-server`. On this runtime those
 options discard earlier global overrides. The wrapper now places its protected
 values in the app-server argument scope; `verify-desktop-wrapper.py` reproduces

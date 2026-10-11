@@ -116,8 +116,9 @@ every connector operation and desktop behavior after activation are separate
 coverage boundaries.
 
 After desktop activation, the original mapped sidebar chat continued its history
-and delivered/followed up with a mapped child, but formal `exec` was absent with
-the earlier `direct` catalog. A Code Mode control passed formal file reading and
+and delivered/followed up with a mapped child, but formal `exec` failed. An
+isolated `direct`-catalog control did not register that tool; this does not prove
+the actual Desktop loaded that catalog. A Code Mode control passed file reading and
 shell arithmetic, and an ephemeral original app-server passed mapped parent/child
 file reading, `apply_patch`, same-child follow-up and independent parent checks.
 The revised catalog fixes that registration condition. A later ordinary
