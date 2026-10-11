@@ -12,12 +12,57 @@ import sys
 import tempfile
 import time
 import tomllib
-import urllib.parse
 
 VERSION = "0.162.0-alpha.17.2"
 
 
+def sibling_module(name, filename):
+    spec = importlib.util.spec_from_file_location(name, Path(__file__).with_name(filename))
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    return module
+
+
+def load_routes_config(path, include_upstream=False):
+    if path is None:
+        return ({}, None, None) if include_upstream else ({}, None)
+    path = Path(path).resolve()
+    try:
+        if path.stat().st_size > 64 * 1024:
+            raise ValueError("Routes configuration exceeds 64 KiB")
+        document = json.loads(path.read_text())
+    except (OSError, json.JSONDecodeError):
+        raise ValueError("Routes configuration is missing or invalid") from None
+    if (not isinstance(document, dict) or type(document.get("version")) is not int
+            or document["version"] != 1
+            or set(document) - {"version", "model_routes", "native_profile", "upstream"}):
+        raise ValueError("Unsupported routes configuration")
+    routes = document.get("model_routes", {})
+    if not isinstance(routes, dict) or any(not isinstance(alias, str) or not isinstance(target, str)
+                                           for alias, target in routes.items()):
+        raise ValueError("Invalid model routes configuration")
+    helper = sibling_module("routed_relay_config", "routed-v2-relay.py")
+    try:
+        routes = helper.parse_model_routes([alias + "=" + target for alias, target in routes.items()])
+        upstream = helper.validated_upstream(document["upstream"]) if "upstream" in document else None
+    except helper.RelayError as error:
+        raise ValueError(str(error)) from None
+    native_profile = document.get("native_profile")
+    if native_profile is not None:
+        if not isinstance(native_profile, str) or not native_profile.strip():
+            raise ValueError("Invalid native profile path")
+        native_profile = Path(native_profile).expanduser()
+        if not native_profile.is_absolute():
+            native_profile = path.parent / native_profile
+        native_profile = native_profile.resolve()
+    return (routes, native_profile, upstream) if include_upstream else (routes, native_profile)
+
+
 def validate(args):
+    args.model_routes, configured_profile, configured_upstream = load_routes_config(
+        getattr(args, "routes_config", None), include_upstream=True)
+    args.native_profile = getattr(args, "native_profile", None) or configured_profile
+    args.alias = list(dict.fromkeys([*args.alias, *args.model_routes]))
     for path in (args.codex_original, args.app):
         if not path.is_file() or not os.access(path, os.X_OK):
             raise ValueError(f"Executable unavailable: {path}")
@@ -31,12 +76,20 @@ def validate(args):
     if not isinstance(provider, str) or not re.fullmatch(r"[A-Za-z0-9_-]+", provider):
         raise ValueError("CLI dotted overrides need a provider ID containing letters, digits, _ or -")
     settings = config.get("model_providers", {}).get(provider, {})
-    upstream = settings.get("base_url", "")
-    parsed = urllib.parse.urlsplit(upstream)
-    if parsed.scheme != "https" or not parsed.hostname or parsed.username or parsed.password or parsed.query or parsed.fragment:
-        raise ValueError("Configured provider needs a plain HTTPS Responses base_url")
+    upstream = configured_upstream or settings.get("base_url", "")
+    helper = sibling_module("routed_relay_validation", "routed-v2-relay.py")
+    try:
+        upstream = helper.validated_upstream(upstream)
+    except helper.RelayError as error:
+        raise ValueError(str(error)) from None
     if settings.get("wire_api", "responses") != "responses":
         raise ValueError("Configured provider does not use Responses")
+    if (upstream.startswith("http://") or args.model_routes) and args.native_profile is None:
+        raise ValueError("Aggregation requires a private native_profile for original-provider task recovery")
+    if args.native_profile is not None:
+        args.native_profile = Path(args.native_profile).resolve()
+        native = sibling_module("routed_native_profile", "recover-v2-tasks.py")
+        native.load_native_profile(args.native_profile)
     catalog = json.loads(args.catalog.read_text())
     for alias in args.alias:
         matches = [model for model in catalog["models"] if model["slug"] == alias]
@@ -129,12 +182,21 @@ def main():
     parser.add_argument("--app", type=Path, default=Path("/usr/lib/chatgpt/ChatGPT"))
     parser.add_argument("--catalog", type=Path, default=directory / "routed-models.json")
     parser.add_argument("--recovery-map", type=Path, default=directory / "recovered-messages.local.json")
+    parser.add_argument("--routes-config", type=Path,
+                        help="Model routes and native recovery profile; defaults to routed-providers.local.json if present")
+    parser.add_argument("--native-profile", type=Path,
+                        help="Override the independent original-provider recovery profile")
     parser.add_argument("--alias", action="append")
     parser.add_argument("--check", action="store_true", help="Validate only; do not start the desktop or relay")
     parser.add_argument("--cli", action="store_true", help="Run the original CLI instead of the desktop")
     parser.add_argument("arguments", nargs=argparse.REMAINDER)
     args = parser.parse_args()
     args.alias = args.alias or ["gpt-5.6-sol"]
+    if args.routes_config is None:
+        candidate = directory / "routed-providers.local.json"
+        args.routes_config = candidate if candidate.exists() else None
+    else:
+        args.routes_config = args.routes_config.resolve()
     args.arguments = args.arguments[1:] if args.arguments[:1] == ["--"] else args.arguments
     for name in ("codex_original", "app", "catalog", "recovery_map"):
         setattr(args, name, getattr(args, name).resolve())
@@ -142,11 +204,23 @@ def main():
     if args.check:
         print(json.dumps({"status": "READY", "runtime": VERSION, "provider": provider,
                           "mapped_aliases": args.alias, "cached_tasks": cached,
+                          "model_routes": args.model_routes,
+                          "independent_native_recovery": args.native_profile is not None,
                           "desktop_activated": False}, ensure_ascii=False))
         return 0
     if not args.cli and desktop_running(args.app):
         print("请先正常退出当前 Codex，再运行此启动器。当前会话和文件不会被关闭或修改。", file=sys.stderr)
         return 2
+    if upstream.startswith("http://") and any(
+            target.startswith("ccs-") for target in args.model_routes.values()):
+        ccs = sibling_module("routed_ccs_ready", "ensure-ccs-proxy.py")
+        try:
+            readiness = ccs.ensure_ccs_ready(upstream)
+        except ccs.CcsReadyError as error:
+            print("CC Switch 代理未就绪：" + str(error), file=sys.stderr)
+            return 2
+        if readiness["started"]:
+            print("已启动 CC Switch，聚合代理已就绪。", file=sys.stderr)
     relay = client = None
     env = os.environ.copy()
     env.pop("CODEX_V2_PLAINTEXT_MESSAGES", None)
@@ -161,6 +235,10 @@ def main():
                    "--auto-recover", "--ready-file", str(ready)]
         for alias in args.alias:
             command += ["--alias", alias]
+        for alias, target in args.model_routes.items():
+            command += ["--model-route", alias + "=" + target]
+        if args.native_profile is not None:
+            command += ["--native-profile", str(args.native_profile)]
         try:
             relay = subprocess.Popen(command, env=env, stdin=subprocess.DEVNULL,
                                      stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)

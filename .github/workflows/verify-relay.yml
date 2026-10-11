@@ -3,6 +3,9 @@ on:
   push:
     paths:
       - 'scripts/*v2*.py'
+      - 'scripts/test-*.py'
+      - 'scripts/prepare-workbuddy-ccs.py'
+      - 'scripts/ensure-ccs-proxy.py'
       - 'scripts/launch-routed-codex.py'
       - 'scripts/make-routed-catalog.py'
       - 'scripts/verify-desktop-wrapper.py'
@@ -11,6 +14,9 @@ on:
   pull_request:
     paths:
       - 'scripts/*v2*.py'
+      - 'scripts/test-*.py'
+      - 'scripts/prepare-workbuddy-ccs.py'
+      - 'scripts/ensure-ccs-proxy.py'
       - 'scripts/launch-routed-codex.py'
       - 'scripts/make-routed-catalog.py'
       - 'scripts/verify-desktop-wrapper.py'
@@ -25,7 +31,12 @@ jobs:
         with:
           python-version: '3.11'
       - run: python scripts/test-routed-v2-relay.py
+      - run: python scripts/test-workbuddy-routes.py
+      - run: python scripts/test-native-recovery-profile.py
+      - run: python scripts/test-prepare-workbuddy-ccs.py
+      - run: python scripts/test-ensure-ccs-proxy.py
       - run: python scripts/routed-v2-relay.py --help
       - run: python scripts/launch-routed-codex.py --help
       - run: python scripts/verify-desktop-wrapper.py --help
+      - run: python scripts/ensure-ccs-proxy.py --help
       - run: sh -n scripts/launch-codex-v2.sh

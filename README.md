@@ -32,6 +32,13 @@ values in the app-server argument scope; `verify-desktop-wrapper.py` reproduces
 the old failure and checks the effective fixed configuration.
 See the [acceptance record](docs/acceptance-0162.md).
 
+The optional [WorkBuddy/CC Switch stack](docs/workbuddy-stack-0162.md) adds a
+separate `gpt-5.6-luna` entry for WorkBuddy CN DeepSeek. Native `gpt-6.1-sol`
+and the existing transit-side `gpt-5.6-sol` mapping retain the original upstream.
+The launcher can start the configured loopback CC Switch proxy when it is closed;
+original-provider task recovery uses a separate private HTTPS profile. Live
+tool, parent/child, queued follow-up, compaction and image checks passed.
+
 The optional [source patch](docs/0.162-plaintext.md) has a process-wide switch and
 is intended for wholly routed invocations. It is not the mixed-model desktop path.
 Both modes can replay old tasks through a private local map produced by native

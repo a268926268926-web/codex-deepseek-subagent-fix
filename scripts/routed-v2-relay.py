@@ -7,6 +7,7 @@ import hashlib
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 import importlib.util
 import io
+import ipaddress
 import json
 from pathlib import Path
 import re
@@ -14,6 +15,7 @@ import sys
 import threading
 from types import SimpleNamespace
 import urllib.error
+import urllib.parse
 import urllib.request
 
 sys.dont_write_bytecode = True
@@ -26,6 +28,43 @@ MAX_BODY = 32 * 1024 * 1024
 
 class RelayError(Exception):
     pass
+
+
+def validated_upstream(url):
+    """HTTPS services and an explicitly local HTTP aggregation service are supported."""
+    if not isinstance(url, str) or any(character.isspace() for character in url) or "\\" in url:
+        raise RelayError("Upstream must be a plain HTTPS or loopback HTTP base_url")
+    try:
+        parsed = urllib.parse.urlsplit(url)
+        port = parsed.port
+    except ValueError:
+        raise RelayError("Upstream must be a plain HTTPS or loopback HTTP base_url") from None
+    if not parsed.hostname or parsed.username is not None or parsed.password is not None or parsed.query or parsed.fragment:
+        raise RelayError("Upstream must be a plain HTTPS or loopback HTTP base_url")
+    local = parsed.hostname.lower() == "localhost"
+    if not local:
+        try:
+            local = ipaddress.ip_address(parsed.hostname).is_loopback
+        except ValueError:
+            local = False
+    if parsed.scheme != "https" and not (parsed.scheme == "http" and local):
+        raise RelayError("HTTP upstream must be loopback; remote services require HTTPS")
+    return url.rstrip("/")
+
+
+def parse_model_routes(specifications):
+    routes = {}
+    for specification in specifications:
+        if not isinstance(specification, str) or specification.count("=") != 1:
+            raise RelayError("Model routes must use alias=target")
+        alias, target = specification.split("=", 1)
+        if (not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9_.-]{0,255}", alias)
+                or not re.fullmatch(r"[A-Za-z0-9][A-Za-z0-9_.:/-]{0,511}", target)):
+            raise RelayError("Invalid model route alias or target")
+        if alias in routes:
+            raise RelayError("Duplicate model route alias")
+        routes[alias] = target
+    return routes
 
 
 def bounded_decompress(body):
@@ -127,6 +166,9 @@ class TaskRecovery:
         spec = importlib.util.spec_from_file_location("v2_task_recovery", path)
         self.helper = importlib.util.module_from_spec(spec)
         spec.loader.exec_module(self.helper)
+        native_profile = getattr(args, "native_profile", None)
+        if native_profile is not None:
+            self.helper.load_native_profile(native_profile)
 
     def read(self, cipher, item):
         self.helper.communication_kind(item)
@@ -144,7 +186,8 @@ class TaskRecovery:
             options = SimpleNamespace(codex_original=self.args.codex_original,
                                       catalog=None, config=[],
                                       model=self.args.recovery_model, effort="low",
-                                      output=self.args.recovery_map, timeout=self.args.timeout)
+                                      output=self.args.recovery_map, timeout=self.args.timeout,
+                                      native_profile=getattr(self.args, "native_profile", None))
             # Native readback must use the original runtime's built-in catalog.
             # The routed catalog is only for the desktop/parent invocation.
             # Submit only the particular encrypted task, retaining its original item ID.
@@ -234,7 +277,10 @@ class Handler(BaseHTTPRequestHandler):
                     value = json.loads(decoded)
                 except ValueError:
                     value = None
-                mapped = isinstance(value, dict) and value.get("model") in self.server.aliases
+                model = value.get("model") if isinstance(value, dict) else None
+                routes = getattr(self.server, "model_routes", {})
+                mapped = (not guarded and isinstance(model, str)
+                          and (model in self.server.aliases or model in routes))
                 if guarded:
                     if not isinstance(value, dict):
                         raise RelayError("Recovery request must be a JSON object")
@@ -245,6 +291,8 @@ class Handler(BaseHTTPRequestHandler):
                             item["tools"] = []
                 elif mapped:
                     value = adapt_request(value, self.server.recovery)
+                    if model in routes:
+                        value["model"] = routes[model]
                 if mapped or guarded:
                     body = json.dumps(value,
                                       ensure_ascii=False, separators=(",", ":")).encode()
@@ -332,23 +380,35 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--upstream", required=True)
     parser.add_argument("--alias", action="append", default=[])
+    parser.add_argument("--model-route", action="append", default=[], metavar="ALIAS=TARGET",
+                        help="Rewrite an explicit mapped alias before forwarding Responses to an aggregator")
     parser.add_argument("--recovery-map", type=Path, required=True)
     parser.add_argument("--codex-original", type=Path, required=True)
+    parser.add_argument("--native-profile", type=Path,
+                        help="Private original-provider credentials for independent encrypted-task recovery")
     parser.add_argument("--recovery-model", default="gpt-6.1-sol")
     parser.add_argument("--auto-recover", action="store_true")
     parser.add_argument("--port", type=int, default=0)
     parser.add_argument("--ready-file", type=Path, required=True)
     parser.add_argument("--timeout", type=float, default=180)
     args = parser.parse_args()
-    if not args.alias:
+    try:
+        args.upstream = validated_upstream(args.upstream)
+        routes = parse_model_routes(args.model_route)
+    except RelayError as error:
+        parser.error(str(error))
+    if not args.alias and not routes:
         parser.error("At least one explicit routed alias is required")
-    if not args.upstream.startswith("https://"):
-        parser.error("Upstream must use HTTPS")
+    if args.auto_recover and (args.upstream.startswith("http://") or routes) and args.native_profile is None:
+        parser.error("Aggregation with automatic recovery requires --native-profile for the original provider")
     args.recovery_map = args.recovery_map.resolve()
     args.codex_original = args.codex_original.resolve()
+    if args.native_profile is not None:
+        args.native_profile = args.native_profile.resolve()
     server = ThreadingHTTPServer(("127.0.0.1", args.port), Handler)
     server.daemon_threads = True
-    server.aliases = set(args.alias)
+    server.aliases = set(args.alias) | set(routes)
+    server.model_routes = routes
     server.upstream = args.upstream.rstrip("/")
     server.timeout = args.timeout
     server.opener = urllib.request.build_opener(NoRedirect())

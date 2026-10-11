@@ -1,0 +1,9 @@
+# Recovery text and provider credentials stay on the user's machine.
+*.local.json
+*.local.jsonl
+*.local.log
+.codex-v2-runtime-*/
+.cc-switch/
+ccs-home/
+__pycache__/
+*.pyc
