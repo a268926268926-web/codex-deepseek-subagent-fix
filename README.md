@@ -12,6 +12,19 @@
 
 ## 🔍 What is this
 
+### 0.162 opt-in adaptation
+
+The `codex-0.162-v2-plaintext` branch adds an opt-in adaptation pinned to
+`rust-v0.162.0-alpha.17.2`, including routed providers whose display name remains
+`OpenAI`. See [scope, build instructions and limitations](docs/0.162-plaintext.md)
+and [pinned source](patches/0.162.0-alpha.17.2/UPSTREAM.md). The existing installer
+still selects the older upstream releases; use `scripts/build-0162.sh` for this
+adaptation. Build and live acceptance results must be checked before deployment.
+This branch also supports old task-history replay using an explicit local map
+created by compatible-service readback; saved ciphertext is kept intact. See the
+recovery section in the same guide. New-task transport and five recovered old
+tasks have been exercised with a routed model in live CLI tests.
+
 Codex MultiAgentV2 sends subagent tasks inside the `encrypted_content` of an `agent_message` item. OpenAI decrypts it server-side, but DeepSeek's Responses implementation does not consume it, so subagents never see their tasks. This repository provides a patched Codex CLI that, for non-OpenAI providers, delivers those tasks as plain user messages, enabling `spawn_agent`, `followup_task`, and `send_message`.
 
 ## ✨ Features
