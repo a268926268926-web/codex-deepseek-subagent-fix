@@ -4,7 +4,42 @@ Source: `rust-v0.162.0-alpha.17.2`, commit
 `740e5af33c71225640e0c1c1555c514c2c93ab74`, Rust 1.95.0, Linux x86_64.
 Tests used the configured Responses gateway. The routed alias was
 `gpt-5.6-sol` with effort `max`. The provider display name was `OpenAI`.
-The local runnable artifact is a development build; the CI script builds release.
+The source-patch artifact is a development build; its CI script builds release.
+The preferred mixed-model path uses the original packaged CLI plus the
+[model-scoped relay](routed-relay-0162.md), without that compiled artifact.
+
+## Final model-scoped relay acceptance
+
+| Original CLI through relay | Observed result |
+| --- | --- |
+| Native parent → routed child | Passed, 32.1 s; new encrypted task automatically read back and cached |
+| Native parent → routed child formal tools | Passed, 96.9 s; shell fixture, apply_patch proof independently read from disk, Node result 391, GitHub identity |
+| Routed parent → routed child / same-child follow-up | Passed, 35.3 s |
+| Native parent idle queue / later follow-up | Passed, 85.8 s; child read the queued note absent from the follow-up prompt |
+| Routed parent → native gpt-6-luna / max | Passed, 45.5 s; native child used a formal tool and returned 391; verification follow-up passed |
+| Old paginated child history | Completed, 12.2 s; task map used without changing the copied five ciphertexts |
+| Old paginated main history | Completed, 11.4 s; original model/effort, fork, completed work and preservation goal read back |
+| Relay contracts | Fourteen passed; includes real loopback HTTP preservation/conversion, recovery tool-call rejection, bounded gzip and failed-cache-write behavior |
+| Original installation/configuration | Packaged executable and config SHA-256 unchanged |
+| Delivered launcher CLI path | Passed, 20.7 s; native parent → routed child; owned relay and temporary wrapper cleaned up |
+| Guarded fresh native parent → routed child | Passed, 51.0 s; this run did not need an uncached ciphertext readback |
+| Final guarded old-communication recovery | Five communications, including three MESSAGE items, recovered twice with identical texts matching the earlier verified map; original built-in native catalog |
+| Final old paginated child with one cache miss | Completed, 17.5 s; cache grew from 9 to 10 and exactly matched the verified map; copied history remained byte-equal |
+
+Ten encrypted task payloads were cached locally after old/new native-origin
+tests; each automatically accepted task needed two identical native readbacks.
+The relay's access log remained empty. CLI completion durations include tool/model
+work and first-use readback latency and do not measure generation TPS.
+
+The original and guarded readback controls both failed when given the routed
+external catalog. Both succeeded for the same old ciphertext using the original
+built-in catalog (6.8 s and 4.3 s respectively). This isolates a catalog-dependent
+compatibility condition; it does not prove a general service outage. Automatic
+recovery now uses the built-in catalog independently of the desktop wrapper.
+Recovery requests carry no tools, including Responses-Lite additional tools;
+fault-injected upstream tool calls are rejected before CLI dispatch.
+
+## Optional source patch and recovery controls
 
 | Check | Observed result |
 | --- | --- |
@@ -33,9 +68,11 @@ They retained ordinary messages, completed tool calls/results, encrypted reasoni
 and the existing compaction. Original files were not changed. An earlier untrimmed
 paginated test waited without completing and was terminated; it is not a pass.
 
-An initial native-parent V2 request returned an upstream error before dispatch.
-A packaged native-model baseline later passed; a native-parent cross-model chain
-has not been established by those results. A message sent immediately after spawn
+An initial source-patch native-parent V2 request returned an upstream error before
+dispatch. The original CLI and the same compiled CLI with its global switch unset
+passed native-tool controls. A native-only direct catalog did not fix the enabled
+switch. This isolated the process-wide adaptation and led to the per-alias relay;
+the final relay established both cross-model directions above. A message sent immediately after spawn
 was not reported in that child's first turn; the dedicated idle-queue test verified
 the documented next-turn delivery behavior.
 

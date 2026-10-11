@@ -12,18 +12,26 @@
 
 ## 🔍 What is this
 
-### 0.162 opt-in adaptation
+### 0.162 adaptation and old-task recovery
 
 The `codex-0.162-v2-plaintext` branch adds an opt-in adaptation pinned to
 `rust-v0.162.0-alpha.17.2`, including routed providers whose display name remains
-`OpenAI`. See [scope, build instructions and limitations](docs/0.162-plaintext.md)
-and [pinned source](patches/0.162.0-alpha.17.2/UPSTREAM.md). The existing installer
-still selects the older upstream releases; use `scripts/build-0162.sh` for this
-adaptation. Build and live acceptance results must be checked before deployment.
-This branch also supports old task-history replay using an explicit local map
-created by compatible-service readback; saved ciphertext is kept intact. See the
-recovery section in the same guide. New-task transport and five recovered old
-tasks have been exercised with a routed model in live CLI tests.
+`OpenAI`. For sessions mixing native and routed models, use the
+[model-scoped relay and launcher](docs/routed-relay-0162.md): the packaged CLI
+stays unchanged, and only the explicit routed alias receives compatibility changes.
+Live tests passed native parent → routed child, routed parent → native Luna/max,
+formal shell/file/MCP tools, queued follow-up and old paginated-history recovery.
+See the [acceptance record](docs/acceptance-0162.md).
+
+The optional [source patch](docs/0.162-plaintext.md) has a process-wide switch and
+is intended for wholly routed invocations. It is not the mixed-model desktop path.
+Both modes can replay old tasks through a private local map produced by native
+compatible-service task readback; saved ciphertext and visible history stay intact.
+Native recovery uses the original built-in model catalog, with tools removed and
+tool-call output blocked before CLI dispatch. Fourteen relay contracts and two
+matching reads of five old task/queued communications passed locally.
+The old upstream `install.sh` still selects 0.146/0.147 releases and does not
+install this adaptation. No private history, map or credential is included here.
 
 Codex MultiAgentV2 sends subagent tasks inside the `encrypted_content` of an `agent_message` item. OpenAI decrypts it server-side, but DeepSeek's Responses implementation does not consume it, so subagents never see their tasks. This repository provides a patched Codex CLI that, for non-OpenAI providers, delivers those tasks as plain user messages, enabling `spawn_agent`, `followup_task`, and `send_message`.
 

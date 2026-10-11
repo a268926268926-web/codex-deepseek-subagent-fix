@@ -1,0 +1,26 @@
+name: Verify model-scoped V2 relay
+on:
+  push:
+    paths:
+      - 'scripts/*v2*.py'
+      - 'scripts/launch-routed-codex.py'
+      - 'scripts/launch-codex-v2.sh'
+      - '.github/workflows/verify-relay.yml'
+  pull_request:
+    paths:
+      - 'scripts/*v2*.py'
+      - 'scripts/launch-routed-codex.py'
+      - 'scripts/launch-codex-v2.sh'
+      - '.github/workflows/verify-relay.yml'
+jobs:
+  contracts:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - run: python scripts/test-routed-v2-relay.py
+      - run: python scripts/routed-v2-relay.py --help
+      - run: python scripts/launch-routed-codex.py --help
+      - run: sh -n scripts/launch-codex-v2.sh
