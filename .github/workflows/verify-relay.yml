@@ -5,6 +5,7 @@ on:
       - 'scripts/*v2*.py'
       - 'scripts/launch-routed-codex.py'
       - 'scripts/make-routed-catalog.py'
+      - 'scripts/verify-desktop-wrapper.py'
       - 'scripts/launch-codex-v2.sh'
       - '.github/workflows/verify-relay.yml'
   pull_request:
@@ -12,6 +13,7 @@ on:
       - 'scripts/*v2*.py'
       - 'scripts/launch-routed-codex.py'
       - 'scripts/make-routed-catalog.py'
+      - 'scripts/verify-desktop-wrapper.py'
       - 'scripts/launch-codex-v2.sh'
       - '.github/workflows/verify-relay.yml'
 jobs:
@@ -25,4 +27,5 @@ jobs:
       - run: python scripts/test-routed-v2-relay.py
       - run: python scripts/routed-v2-relay.py --help
       - run: python scripts/launch-routed-codex.py --help
+      - run: python scripts/verify-desktop-wrapper.py --help
       - run: sh -n scripts/launch-codex-v2.sh

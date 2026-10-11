@@ -27,6 +27,31 @@ launcher_spec.loader.exec_module(launcher)
 
 
 class CatalogContractTests(unittest.TestCase):
+    def test_desktop_app_server_flags_share_scope_and_preserve_arguments(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            directory = Path(temporary)
+            original = directory / "original cli"
+            original.write_text("#!/usr/bin/env python3\nimport json,sys\nprint(json.dumps(sys.argv[1:]))\n")
+            original.chmod(0o700)
+            wrapper = directory / "wrapper.sh"
+            wrapper.write_text(launcher.wrapper_text(original, "custom", "http://127.0.0.1:43541",
+                                                      directory / "catalog with spaces.json"))
+            wrapper.chmod(0o700)
+            desktop = ["-c", "features.code_mode_host=true", "app-server", "--analytics-default-enabled",
+                       "-c", "plugins.codex-app-tools@openai-bundled.mcp_servers.codex_app.enabled=true",
+                       "-c", "plugins.code-review@openai-bundled.mcp_servers.code-review.enabled=true"]
+            result = subprocess.run([str(wrapper), *desktop], capture_output=True, text=True, check=True)
+            actual = json.loads(result.stdout)
+            self.assertEqual(actual[:len(desktop)], desktop)
+            self.assertIn('model_providers.custom.base_url="http://127.0.0.1:43541"', actual[len(desktop):])
+            self.assertTrue(all(actual[i] == "-c" for i in range(len(desktop), len(actual), 2)))
+            # A config value equal to the subcommand is not itself a subcommand.
+            normal = ["-c", "model=app-server", "exec", "-"]
+            result = subprocess.run([str(wrapper), *normal], capture_output=True, text=True, check=True)
+            actual = json.loads(result.stdout)
+            self.assertEqual(actual[-len(normal):], normal)
+            self.assertIn('model_providers.custom.base_url="http://127.0.0.1:43541"', actual[:-len(normal)])
+
     def test_routing_preserves_code_mode_and_native_model_metadata(self):
         with tempfile.TemporaryDirectory() as temporary:
             directory = Path(temporary)

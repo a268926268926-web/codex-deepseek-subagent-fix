@@ -19,7 +19,7 @@ The preferred mixed-model path uses the original packaged CLI plus the
 | Routed parent → native gpt-6-luna / max | Passed, 45.5 s; native child used a formal tool and returned 391; verification follow-up passed |
 | Old paginated child history | Completed, 12.2 s; task map used without changing the copied five ciphertexts |
 | Old paginated main history | Completed, 11.4 s; original model/effort, fork, completed work and preservation goal read back |
-| Relay/catalog contracts | Sixteen passed; includes preserved Code Mode/native model metadata, launcher mode validation, real loopback HTTP preservation/conversion, recovery tool-call rejection, bounded gzip and failed-cache-write behavior |
+| Relay/catalog/wrapper contracts | Seventeen passed; includes preserved Code Mode/native model metadata, launcher mode validation, real loopback HTTP preservation/conversion, recovery tool-call rejection, bounded gzip, failed-cache-write behavior and Desktop argument preservation |
 | Installation/configuration before desktop activation | Packaged executable and config SHA-256 unchanged at that checkpoint |
 | Delivered launcher CLI path | Passed, 20.7 s; native parent → routed child; owned relay and temporary wrapper cleaned up |
 | Guarded fresh native parent → routed child | Passed, 51.0 s; this run did not need an uncached ciphertext readback |
@@ -41,7 +41,8 @@ fault-injected upstream tool calls are rejected before CLI dispatch.
 
 ## Desktop tool-mode correction
 
-The activated desktop used the delivered original-CLI wrapper and loopback relay.
+The activated desktop's argv referenced the delivered wrapper and loopback relay;
+later effective-config and socket checks showed those overrides were discarded.
 Its existing mapped sidebar chat resumed prior history and completed a mapped-child
 spawn/follow-up in 104.3 seconds, but the formal `functions.exec` tool was absent.
 That run did not read its random fixture and is a partial failure, not full desktop
@@ -60,11 +61,48 @@ independent parent verification of the proof. The parent initially tried a neste
 collaboration invocation, which failed; its direct retry succeeded and created
 exactly one child. Eight independent local outcome checks passed.
 
-The generator now preserves the original Code Mode and the wrapper explicitly
-enables its host. The running user's original mapped sidebar still needs a check
-with that updated catalog loaded. These controls do not establish every connector
-operation. The installed original CLI remained byte-identical; the user's config
-hash changed after app/user activity and is not claimed unchanged after activation.
+The generator preserves the original Code Mode and the wrapper enables its host.
+After relaunch, the mapped sidebar and an ordinary in-session mapped child still
+failed formal exec, returning `function_call functions__exec` JSON instead of the
+expected freeform `custom_tool_call exec`. The ordinary native Luna/max control
+passed formal fixture read, shell calculation, official patch and independent
+proof verification. Follow-up and queued-message checks were not performed on
+that failed mapped child.
+
+Live production sampling collected 180 socket snapshots over 43.2 seconds:
+none showed an app-server/relay connection, the relay's I/O syscall counters did
+not change, and the new 504-byte encrypted task was not cached. The exact Desktop
+CLI invocation then independently reproduced the argument-layering bug: adding
+plugin `-c` flags after `app-server` drops the global provider URL, catalog and
+Code Mode overrides placed before the subcommand.
+
+The corrected wrapper places protected overrides in the app-server argument
+scope. The original runtime's `config/read` reproduced the old failure and then
+passed all nine fixed checks, including the retained plugin arguments. This is
+tested by `scripts/verify-desktop-wrapper.py`; no model call, credentials or
+private config content is logged.
+
+Using the fixed wrapper with the same complete Desktop argument shape, a native
+Luna/max parent spawned one ordinary gpt-5.6-sol/max child and completed in
+252.3 seconds. The child read an exact random 75-byte UTF-8 fixture, ran formal
+shell arithmetic (391), used official `apply_patch` to create a 30-byte proof,
+then read the previously queued idle message and computed 551 in a follow-up on
+the same child. Runtime command/file-change events identify that child's thread;
+the parent and root independently verified the files. Fourteen outcome checks
+passed. The test's private recovery cache gained exactly three communication
+entries; only the queued-message entry contains its marker. Original executable,
+user config and production recovery-cache hashes stayed unchanged during this
+fix. This duration includes recovery and model/tool work, not a TPS benchmark.
+
+The launcher now performs one tool-free `config/read` preflight before opening
+Desktop and refuses to open it if its effective routing/catalog/V2 settings do
+not match. This creates no model request or token usage. A smoke Desktop passed
+this path and its owned temporary wrapper and relay were cleaned up.
+The user's running instance still needs to load the corrected wrapper before
+its actual ordinary mapped child can be accepted. These controls do not
+establish every connector operation. The
+installed CLI remained byte-identical; the user's config hash changed after
+app/user activity and is not claimed unchanged after the earlier activation.
 
 ## Optional source patch and recovery controls
 

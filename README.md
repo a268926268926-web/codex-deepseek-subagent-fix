@@ -25,6 +25,10 @@ The routed catalog retains Code Mode so the desktop keeps its formal `exec`
 entry point; the launcher enables the Code Mode host. An earlier direct catalog
 lost that desktop tool, and the correction passed isolated original app-server
 parent/child file, patch and follow-up controls.
+Desktop also appends plugin `-c` options after `app-server`. On this runtime those
+options discard earlier global overrides. The wrapper now places its protected
+values in the app-server argument scope; `verify-desktop-wrapper.py` reproduces
+the old failure and checks the effective fixed configuration.
 See the [acceptance record](docs/acceptance-0162.md).
 
 The optional [source patch](docs/0.162-plaintext.md) has a process-wide switch and

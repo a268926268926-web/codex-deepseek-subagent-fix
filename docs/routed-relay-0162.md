@@ -97,10 +97,11 @@ lazily; this can increase input tokens compared with native deferred tools.
 This relay is an additional local process and
 failure point, and the launcher checks the exact verified runtime version.
 
-Sixteen contract tests check preserved Code Mode and native catalog metadata,
+Seventeen contract tests check preserved Code Mode and native catalog metadata,
 launcher mode validation, native body/gzip preservation, HTTP mapped
 input/stream conversion, attribution and IDs, unchanged reasoning, ciphertext
-rejection, bounded decompression, disk-write failure and the recovery tool guard:
+rejection, bounded decompression, disk-write failure, the recovery tool guard and
+preserved Desktop arguments in the app-server configuration scope:
 
 ```bash
 python3 scripts/test-routed-v2-relay.py
@@ -119,9 +120,33 @@ and delivered/followed up with a mapped child, but formal `exec` was absent with
 the earlier `direct` catalog. A Code Mode control passed formal file reading and
 shell arithmetic, and an ephemeral original app-server passed mapped parent/child
 file reading, `apply_patch`, same-child follow-up and independent parent checks.
-The revised catalog fixes that registration condition. A running desktop may
-retain its loaded catalog, so normally relaunch it with the updated bundle before
-claiming that its original mapped sidebar tools have passed.
+The revised catalog fixes that registration condition. A later ordinary
+in-session routed child still received an unreadable task and returned flattened
+JSON `functions__exec` calls. Live socket and relay I/O sampling showed that the
+Desktop process was not using the relay at all. The exact Desktop invocation
+reproduced the cause: its trailing plugin `-c` options discard global routing and
+catalog overrides placed before `app-server` on this runtime.
+
+The wrapper now puts its protected overrides after the Desktop app-server
+arguments. Check effective configuration, rather than relying on process argv:
+
+```bash
+python3 scripts/verify-desktop-wrapper.py --catalog /absolute/path/to/routed-models.json
+```
+
+This makes no model request and retains only nonsecret boolean checks. It
+reproduces the old failure and checks nine fixed configuration values, including
+preserved Desktop plugin options. A running app-server retains its old settings;
+normally relaunch with the updated bundle before claiming that its actual
+ordinary in-session routed child has passed. If that path passes, no further
+sidebar-chat investigation is needed.
+
+The revised launcher checks effective app-server configuration once before
+opening Desktop, without making a model request. A fixed-wrapper control using
+the complete Desktop arguments passed native Luna/max parent → ordinary routed
+child/max formal file reading, patching, queued idle-message readback, same-child
+follow-up and independent file checks. This is separate from acceptance of the
+user's currently running app-server, which still has its old startup settings.
 
 Authentication headers are forwarded in memory to the configured HTTPS service.
 Redirects are disabled. Access logs, task content, headers and raw responses are

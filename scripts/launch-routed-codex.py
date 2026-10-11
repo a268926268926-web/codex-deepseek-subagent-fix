@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """Launch the existing Linux desktop/CLI through a model-scoped V2 relay."""
 import argparse
+import importlib.util
 import json
 import os
 from pathlib import Path
@@ -77,11 +78,25 @@ def wrapper_text(original, provider, url, catalog):
                  "features.multi_agent_v2.hide_spawn_agent_metadata=false",
                  "features.multi_agent_v2.expose_spawn_agent_model_overrides=true",
                  "features.multi_agent_v2.wait_agent_enabled=true"]
-    command = [str(original)]
+    flags = []
     for override in overrides:
-        command += ["-c", override]
-    return ('#!/bin/sh\nunset CODEX_V2_PLAINTEXT_MESSAGES CODEX_V2_RECOVERY_MAP\nexec '
-            + shlex.join(command) + ' "$@"\n')
+        flags += ["-c", override]
+    # On 0.162, a global -c before app-server is lost when Desktop passes its
+    # own -c after the subcommand. Keep our values in the same argument scope.
+    # Desktop may itself prefix app-server with -c features.code_mode_host=true.
+    return ('#!/bin/sh\nunset CODEX_V2_PLAINTEXT_MESSAGES CODEX_V2_RECOVERY_MAP\n'
+            'v2_command_name=\nv2_value_pending=0\n'
+            'for v2_argument in "$@"; do\n'
+            '  if [ "$v2_value_pending" = 1 ]; then v2_value_pending=0; continue; fi\n'
+            '  case "$v2_argument" in\n'
+            '    -c|--config|--enable|--disable|-m|--model|-p|--profile|-s|--sandbox|-a|--ask-for-approval|-C|--cd) v2_value_pending=1 ;;\n'
+            '    --) break ;;\n'
+            '    -*) ;;\n'
+            '    *) v2_command_name=$v2_argument; break ;;\n'
+            '  esac\ndone\n'
+            'if [ "$v2_command_name" = app-server ]; then\n'
+            '  exec ' + shlex.quote(str(original)) + ' "$@" ' + shlex.join(flags) + '\n'
+            'fi\nexec ' + shlex.join([str(original), *flags]) + ' "$@"\n')
 
 
 def stop_owned(process):
@@ -92,6 +107,19 @@ def stop_owned(process):
         except subprocess.TimeoutExpired:
             process.kill()
             process.wait()
+
+
+def verify_desktop_config(wrapper, provider, url, catalog):
+    spec = importlib.util.spec_from_file_location(
+        "desktop_config_check", Path(__file__).with_name("verify-desktop-wrapper.py"))
+    helper = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(helper)
+    checks = helper.read_config([str(wrapper), *helper.desktop_arguments()], provider, url, catalog)
+    if not all(checks.values()):
+        failed = ", ".join(key for key, passed in checks.items() if not passed)
+        print("桌面有效配置核验未通过：" + failed, file=sys.stderr)
+        raise RuntimeError("Desktop route verification failed")
+    return checks
 
 
 def main():
@@ -145,6 +173,8 @@ def main():
             wrapper = runtime / "routed-codex-cli.sh"
             wrapper.write_text(wrapper_text(args.codex_original, provider, url, args.catalog))
             wrapper.chmod(0o700)
+            if not args.cli:
+                verify_desktop_config(wrapper, provider, url, args.catalog)
             env["CODEX_CLI_PATH"] = str(wrapper)
             executable = wrapper if args.cli else args.app
             client = subprocess.Popen([str(executable), *args.arguments], env=env)
