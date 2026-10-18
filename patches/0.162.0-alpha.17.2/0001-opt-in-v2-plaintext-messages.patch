@@ -1,0 +1,611 @@
+diff --git a/codex-rs/core/Cargo.toml b/codex-rs/core/Cargo.toml
+index cfd7236..92a29b6 100644
+--- a/codex-rs/core/Cargo.toml
++++ b/codex-rs/core/Cargo.toml
+@@ -108,6 +108,7 @@ rmcp = { workspace = true, default-features = false, features = [
+ serde = { workspace = true, features = ["derive"] }
+ serde_json = { workspace = true }
+ sha1 = { workspace = true }
++sha2 = { workspace = true }
+ shlex = { workspace = true }
+ similar = { workspace = true }
+ tempfile = { workspace = true }
+diff --git a/codex-rs/core/src/agent/mod.rs b/codex-rs/core/src/agent/mod.rs
+index c9a1547..9ecbae7 100644
+--- a/codex-rs/core/src/agent/mod.rs
++++ b/codex-rs/core/src/agent/mod.rs
+@@ -2,6 +2,7 @@ pub(crate) mod agent_resolver;
+ pub(crate) mod api;
+ pub(crate) mod child_config;
+ pub(crate) mod control;
++pub(crate) mod plaintext;
+ mod registry;
+ pub(crate) mod role;
+ pub(crate) mod status;
+diff --git a/codex-rs/core/src/client.rs b/codex-rs/core/src/client.rs
+index 24f2964..23ddcca 100644
+--- a/codex-rs/core/src/client.rs
++++ b/codex-rs/core/src/client.rs
+@@ -939,6 +939,9 @@ impl ModelClient {
+             prefix.push(instructions);
+         }
+         input.splice(0..0, prefix);
++        if crate::agent::plaintext::enabled() {
++            crate::agent::plaintext::format_request(&mut input)?;
++        }
+         if !is_openai {
+             for item in &mut input {
+                 item.clear_internal_chat_message_metadata_passthrough();
+diff --git a/codex-rs/core/src/tools/handlers/multi_agents_v2.rs b/codex-rs/core/src/tools/handlers/multi_agents_v2.rs
+index ea44c0a..5d12aac 100644
+--- a/codex-rs/core/src/tools/handlers/multi_agents_v2.rs
++++ b/codex-rs/core/src/tools/handlers/multi_agents_v2.rs
+@@ -54,13 +54,28 @@ pub(crate) async fn emit_sub_agent_activity(
+ fn agent_message_from_tool(
+     message: String,
+     source: &crate::tools::context::ToolCallSource,
+-) -> AgentMessage {
+-    if matches!(
+-        source,
+-        crate::tools::context::ToolCallSource::DirectPlaintextMessage
+-    ) {
+-        AgentMessage::Plaintext(message)
+-    } else {
+-        AgentMessage::Encrypted(message)
++) -> Result<AgentMessage, FunctionCallError> {
++    if crate::agent::plaintext::enabled() {
++        if !matches!(
++            source,
++            crate::tools::context::ToolCallSource::DirectPlaintextMessage
++        ) {
++            return Err(FunctionCallError::RespondToModel(
++                "V2 plaintext messages must be called through the direct tool surface; Code Mode delivery is not supported in this compatibility mode.".to_string(),
++            ));
++        }
++        crate::agent::plaintext::reject_ciphertext(&message)
++            .map_err(FunctionCallError::RespondToModel)?;
++        return Ok(AgentMessage::Plaintext(message));
+     }
++    Ok(
++        if matches!(
++            source,
++            crate::tools::context::ToolCallSource::DirectPlaintextMessage
++        ) {
++            AgentMessage::Plaintext(message)
++        } else {
++            AgentMessage::Encrypted(message)
++        },
++    )
+ }
+diff --git a/codex-rs/core/src/tools/handlers/multi_agents_v2/message_tool.rs b/codex-rs/core/src/tools/handlers/multi_agents_v2/message_tool.rs
+index 26d329f..0a9a7fa 100644
+--- a/codex-rs/core/src/tools/handlers/multi_agents_v2/message_tool.rs
++++ b/codex-rs/core/src/tools/handlers/multi_agents_v2/message_tool.rs
+@@ -66,7 +66,7 @@ pub(super) async fn handle_message_string_tool(
+             target: AgentTarget::Id(receiver_thread_id),
+             resume_config,
+             input: AgentInput::Message {
+-                message: agent_message_from_tool(message, &source),
++                message: agent_message_from_tool(message, &source)?,
+                 mode,
+             },
+             start_options: TurnStartOptions {
+diff --git a/codex-rs/core/src/tools/handlers/multi_agents_v2/spawn.rs b/codex-rs/core/src/tools/handlers/multi_agents_v2/spawn.rs
+index 218fbdc..a8a5e37 100644
+--- a/codex-rs/core/src/tools/handlers/multi_agents_v2/spawn.rs
++++ b/codex-rs/core/src/tools/handlers/multi_agents_v2/spawn.rs
+@@ -189,7 +189,7 @@ async fn handle_spawn_agent(
+             caller: session.thread_id,
+             config,
+             input: AgentInput::Message {
+-                message: agent_message_from_tool(message, &source),
++                message: agent_message_from_tool(message, &source)?,
+                 mode: MessageDeliveryMode::TriggerTurn,
+             },
+             source: spawn_source,
+diff --git a/codex-rs/core/src/tools/multi_agent_tool.rs b/codex-rs/core/src/tools/multi_agent_tool.rs
+index 098e433..84970be 100644
+--- a/codex-rs/core/src/tools/multi_agent_tool.rs
++++ b/codex-rs/core/src/tools/multi_agent_tool.rs
+@@ -47,7 +47,12 @@ pub(super) fn multi_agent_v2_handler(
+         tracing::warn!(tool = %handler.tool_name(), reason, "Invalid catalog tool parameters; using bundled parameters");
+     }
+     let parameters_override = parameters_override.and_then(Result::ok);
+-    if namespace.is_none() && description_override.is_none() && parameters_override.is_none() {
++    let plaintext_messages = crate::agent::plaintext::enabled();
++    if namespace.is_none()
++        && description_override.is_none()
++        && parameters_override.is_none()
++        && !plaintext_messages
++    {
+         return Arc::new(handler);
+     }
+     Arc::new(MultiAgentV2ToolOverrides {
+@@ -55,6 +60,7 @@ pub(super) fn multi_agent_v2_handler(
+         namespace: namespace.map(str::to_owned),
+         description_override: description_override.map(str::to_owned),
+         parameters_override,
++        plaintext_messages,
+     })
+ }
+ 
+@@ -63,6 +69,7 @@ struct MultiAgentV2ToolOverrides {
+     namespace: Option<String>,
+     description_override: Option<String>,
+     parameters_override: Option<JsonSchema>,
++    plaintext_messages: bool,
+ }
+ 
+ impl ToolExecutor<ToolInvocation> for MultiAgentV2ToolOverrides {
+@@ -83,6 +90,7 @@ impl ToolExecutor<ToolInvocation> for MultiAgentV2ToolOverrides {
+             if let Some(parameters) = &self.parameters_override {
+                 tool.parameters.clone_from(parameters);
+             }
++            configure_message_transport(&mut tool.parameters, self.plaintext_messages);
+         }
+         match (&self.namespace, spec) {
+             (Some(namespace), ToolSpec::Function(tool)) => {
+@@ -116,6 +124,48 @@ impl ToolExecutor<ToolInvocation> for MultiAgentV2ToolOverrides {
+     }
+ }
+ 
++fn configure_message_transport(parameters: &mut JsonSchema, plaintext: bool) {
++    if plaintext
++        && let Some(message) = parameters
++            .properties
++            .as_mut()
++            .and_then(|properties| properties.get_mut("message"))
++    {
++        message.encrypted = None;
++    }
++}
++
++#[cfg(test)]
++mod plaintext_tests {
++    use super::*;
++    use std::collections::BTreeMap;
++
++    #[test]
++    fn opt_in_removes_only_the_message_marker_after_catalog_overrides() {
++        let mut parameters = JsonSchema::object(
++            BTreeMap::from([
++                (
++                    "message".to_string(),
++                    JsonSchema::string(None).with_encrypted(),
++                ),
++                (
++                    "other".to_string(),
++                    JsonSchema::string(None).with_encrypted(),
++                ),
++            ]),
++            None,
++            None,
++        );
++        let original = parameters.clone();
++        configure_message_transport(&mut parameters, false);
++        assert_eq!(parameters, original);
++        configure_message_transport(&mut parameters, true);
++        let properties = parameters.properties.unwrap();
++        assert_eq!(properties["message"].encrypted, None);
++        assert_eq!(properties["other"].encrypted, Some(true));
++    }
++}
++
+ impl CoreToolRuntime for MultiAgentV2ToolOverrides {
+     fn wait_until_ready<'a>(&'a self, session: &'a Arc<Session>) -> Option<BoxFuture<'a, ()>> {
+         self.handler.wait_until_ready(session)
+diff --git a/codex-rs/core/src/tools/router.rs b/codex-rs/core/src/tools/router.rs
+index baf39f0..e206de6 100644
+--- a/codex-rs/core/src/tools/router.rs
++++ b/codex-rs/core/src/tools/router.rs
+@@ -43,15 +43,20 @@ pub struct ToolCall {
+ 
+ impl ToolCall {
+     pub(crate) fn direct_source(&self) -> ToolCallSource {
+-        if self.tool_name.namespace.as_deref() == Some("collaboration")
++        self.direct_source_with_plaintext_messages(crate::agent::plaintext::enabled())
++    }
++
++    fn direct_source_with_plaintext_messages(&self, plaintext_messages: bool) -> ToolCallSource {
++        if (self.tool_name.namespace.as_deref() == Some("collaboration") || plaintext_messages)
+             && matches!(
+                 self.tool_name.name.as_str(),
+                 "spawn_agent" | "send_message" | "followup_task"
+             )
+-            && self
+-                .encrypted_function_args
+-                .as_ref()
+-                .is_some_and(Vec::is_empty)
++            && (plaintext_messages
++                || self
++                    .encrypted_function_args
++                    .as_ref()
++                    .is_some_and(Vec::is_empty))
+         {
+             ToolCallSource::DirectPlaintextMessage
+         } else {
+@@ -254,6 +259,17 @@ impl ToolRouter {
+                 ..
+             } => {
+                 let tool_name = ToolName::new(namespace, name).with_default_namespace();
++                if crate::agent::plaintext::enabled()
++                    && matches!(
++                        tool_name.name.as_str(),
++                        "spawn_agent" | "send_message" | "followup_task"
++                    )
++                {
++                    crate::agent::plaintext::reject_encrypted_parameters(
++                        encrypted_function_args.as_deref(),
++                    )
++                    .map_err(FunctionCallError::RespondToModel)?;
++                }
+                 Ok(Some(ToolCall {
+                     tool_name,
+                     call_id,
+diff --git a/codex-rs/core/src/tools/router_tests.rs b/codex-rs/core/src/tools/router_tests.rs
+index 05a1e2e..b8e16a1 100644
+--- a/codex-rs/core/src/tools/router_tests.rs
++++ b/codex-rs/core/src/tools/router_tests.rs
+@@ -44,6 +44,28 @@ use super::tool_log_payload;
+ 
+ struct ExtensionEchoContributor;
+ 
++#[test]
++fn plaintext_mode_redacts_messages_without_provider_metadata() {
++    let call = ToolCall {
++        tool_name: ToolName::namespaced("custom_collaboration", "spawn_agent"),
++        call_id: "plaintext-spawn".to_string(),
++        payload: ToolPayload::Function {
++            arguments: json!({"message": "private task"}).to_string(),
++        },
++        encrypted_function_args: None,
++    };
++    assert_eq!(
++        call.direct_source_with_plaintext_messages(false),
++        ToolCallSource::Direct
++    );
++    let source = call.direct_source_with_plaintext_messages(true);
++    assert_eq!(source, ToolCallSource::DirectPlaintextMessage);
++    assert_eq!(
++        tool_log_payload(&call.payload, &source),
++        "[plaintext arguments]"
++    );
++}
++
+ #[test]
+ fn tool_log_payload_redacts_plaintext_multi_agent_messages() {
+     let payload = ToolPayload::Function {
+diff --git a/codex-rs/core/src/agent/plaintext.rs b/codex-rs/core/src/agent/plaintext.rs
+new file mode 100644
+index 0000000..aac09d4
+--- /dev/null
++++ b/codex-rs/core/src/agent/plaintext.rs
+@@ -0,0 +1,328 @@
++//! Explicit compatibility mode for providers that cannot consume agent-message items.
++//!
++//! This is process-scoped and disabled unless the launcher opts in. It never decrypts content
++//! and rewrites only the outbound request copy; persisted conversation history stays intact.
++
++use codex_protocol::error::CodexErr;
++use codex_protocol::error::Result;
++use codex_protocol::models::AgentMessageInputContent;
++use codex_protocol::models::ContentItem;
++use codex_protocol::models::ResponseItem;
++use serde::Deserialize;
++use sha2::Digest;
++use sha2::Sha256;
++use std::collections::HashMap;
++use std::path::Path;
++
++const MAX_RECOVERY_MAP_BYTES: usize = 4 * 1024 * 1024;
++
++/// User-owned task text recovered through a compatible service. This is not a local decryptor.
++#[derive(Deserialize)]
++struct RecoveryMap {
++    version: u8,
++    messages: HashMap<String, String>,
++}
++
++fn decode_recovery_map(bytes: &[u8]) -> Result<RecoveryMap> {
++    if bytes.len() > MAX_RECOVERY_MAP_BYTES {
++        return Err(CodexErr::InvalidRequest(
++            "V2 recovery map exceeds 4 MiB".into(),
++        ));
++    }
++    let map: RecoveryMap = serde_json::from_slice(bytes)
++        .map_err(|_| CodexErr::InvalidRequest("Invalid V2 recovery map JSON".into()))?;
++    if map.version != 1
++        || map.messages.iter().any(|(hash, text)| {
++            hash.len() != 64
++                || !hash
++                    .bytes()
++                    .all(|b| b.is_ascii_digit() || (b'a'..=b'f').contains(&b))
++                || text.trim().is_empty()
++                || reject_ciphertext(text).is_err()
++        })
++    {
++        return Err(CodexErr::InvalidRequest(
++            "Invalid V2 recovery map entry or version".into(),
++        ));
++    }
++    Ok(map)
++}
++
++fn load_recovery_map() -> Result<Option<RecoveryMap>> {
++    let Some(path) = std::env::var_os("CODEX_V2_RECOVERY_MAP") else {
++        return Ok(None);
++    };
++    let path = Path::new(&path);
++    if !path.is_absolute() {
++        return Err(CodexErr::InvalidRequest(
++            "V2 recovery map path must be absolute".into(),
++        ));
++    }
++    let file = std::fs::File::open(path)
++        .map_err(|_| CodexErr::InvalidRequest("Cannot read V2 recovery map".into()))?;
++    let mut bytes = Vec::new();
++    // Bound the read even when the file grows or is replaced after it was opened.
++    std::io::Read::read_to_end(
++        &mut std::io::Read::take(file, (MAX_RECOVERY_MAP_BYTES + 1) as u64),
++        &mut bytes,
++    )
++    .map_err(|_| CodexErr::InvalidRequest("Cannot read V2 recovery map".into()))?;
++    decode_recovery_map(&bytes).map(Some)
++}
++
++pub(crate) fn enabled() -> bool {
++    std::env::var("CODEX_V2_PLAINTEXT_MESSAGES").as_deref() == Ok("1")
++}
++
++pub(crate) fn reject_ciphertext(message: &str) -> std::result::Result<(), String> {
++    if message.trim_start().starts_with("gAAAAA") {
++        Err("V2 plaintext delivery received an encrypted task. Start a fresh turn with the patched runtime; ciphertext cannot be converted to plaintext locally.".to_string())
++    } else {
++        Ok(())
++    }
++}
++
++pub(crate) fn reject_encrypted_parameters(
++    parameters: Option<&[String]>,
++) -> std::result::Result<(), String> {
++    if parameters.is_some_and(|parameters| !parameters.is_empty()) {
++        Err("V2 plaintext delivery received encrypted tool parameters. No task was dispatched; request plaintext arguments in a fresh turn.".to_string())
++    } else {
++        Ok(())
++    }
++}
++
++pub(crate) fn format_request(input: &mut [ResponseItem]) -> Result<()> {
++    let recovery = load_recovery_map()?;
++    format_request_with_recovery(input, recovery.as_ref())
++}
++
++fn format_request_with_recovery(
++    input: &mut [ResponseItem],
++    recovery: Option<&RecoveryMap>,
++) -> Result<()> {
++    // Validate every conversion before applying any, so a missing recovery cannot partly rewrite
++    // an otherwise unchanged request. Persisted history is never passed here for mutation.
++    let mut conversions = Vec::new();
++    for (index, item) in input.iter().enumerate() {
++        let ResponseItem::AgentMessage { id, content, .. } = item else {
++            continue;
++        };
++        let mut text_parts = Vec::with_capacity(content.len());
++        for part in content {
++            match part {
++                AgentMessageInputContent::InputText { text } => text_parts.push(text.as_str()),
++                AgentMessageInputContent::EncryptedContent { encrypted_content } => {
++                    let hash = format!("{:x}", Sha256::digest(encrypted_content.as_bytes()));
++                    let text = recovery.and_then(|map| map.messages.get(&hash)).ok_or_else(|| {
++                        CodexErr::InvalidRequest(
++                            "An encrypted V2 task needs a verified recovery entry. Recover the task through its original compatible service and set CODEX_V2_RECOVERY_MAP; saved history remains unchanged.".into(),
++                        )
++                    })?;
++                    text_parts.push(text.as_str());
++                }
++            }
++        }
++        let text = text_parts.join("\n");
++        if text.trim().is_empty() {
++            return Err(CodexErr::InvalidRequest(
++                "V2 plaintext delivery received an empty agent message".into(),
++            ));
++        }
++        // The existing V2 renderer has already included sender, recipient, and message type.
++        conversions.push((
++            index,
++            ResponseItem::Message {
++                id: id.clone(),
++                role: "user".to_string(),
++                content: vec![ContentItem::InputText { text }],
++                phase: None,
++                internal_chat_message_metadata_passthrough: None,
++            },
++        ));
++    }
++    for (index, converted) in conversions {
++        input[index] = converted;
++    }
++    Ok(())
++}
++
++#[cfg(test)]
++mod tests {
++    use super::*;
++    use codex_protocol::AgentPath;
++    use codex_protocol::ResponseItemId;
++    use codex_protocol::protocol::InterAgentCommunication;
++    use pretty_assertions::assert_eq;
++
++    #[test]
++    fn plaintext_request_preserves_attribution_and_result_delivery() {
++        let text = "Message Type: FINAL_ANSWER\nTask name: /root\nSender: /root/worker\nPayload:\nverified result";
++        let mut communication = InterAgentCommunication::new(
++            AgentPath::try_from("/root/worker").unwrap(),
++            AgentPath::root(),
++            Vec::new(),
++            text.to_string(),
++            false,
++        );
++        let id = ResponseItemId::from_server("amsg-preserved-id".to_string());
++        communication.id = Some(id.clone());
++        let ordinary = ResponseItem::Message {
++            id: None,
++            role: "user".to_string(),
++            content: vec![ContentItem::InputText {
++                text: "ordinary user message".to_string(),
++            }],
++            phase: None,
++            internal_chat_message_metadata_passthrough: None,
++        };
++        let reasoning = ResponseItem::Reasoning {
++            id: None,
++            summary: Vec::new(),
++            content: None,
++            encrypted_content: Some("original-provider-reasoning".to_string()),
++            internal_chat_message_metadata_passthrough: None,
++        };
++        let mut input = vec![
++            ordinary.clone(),
++            communication.to_model_input_item(),
++            reasoning.clone(),
++        ];
++        format_request_with_recovery(&mut input, None).unwrap();
++        assert_eq!(input[0], ordinary);
++        let ResponseItem::Message {
++            id: converted_id,
++            role,
++            content,
++            ..
++        } = &input[1]
++        else {
++            panic!("expected user message")
++        };
++        assert_eq!(role, "user");
++        assert_eq!(converted_id.as_ref(), Some(&id));
++        assert_eq!(input[2], reasoning);
++        assert_eq!(
++            content,
++            &vec![ContentItem::InputText {
++                text: text.to_string()
++            }]
++        );
++        assert!(matches!(
++            communication.to_model_input_item(),
++            ResponseItem::AgentMessage { .. }
++        ));
++    }
++
++    #[test]
++    fn encrypted_history_is_rejected_without_exposing_ciphertext() {
++        let communication = InterAgentCommunication::new_encrypted(
++            AgentPath::root(),
++            AgentPath::try_from("/root/worker").unwrap(),
++            Vec::new(),
++            "private-ciphertext".to_string(),
++            true,
++        );
++        let mut input = vec![communication.to_model_input_item()];
++        let error = format_request_with_recovery(&mut input, None)
++            .unwrap_err()
++            .to_string();
++        assert!(!error.contains("private-ciphertext"));
++        assert!(matches!(input[0], ResponseItem::AgentMessage { .. }));
++    }
++
++    #[test]
++    fn encrypted_tool_argument_cannot_be_relabelled_as_plaintext() {
++        assert!(reject_ciphertext("  gAAAAABencrypted-value").is_err());
++        assert!(reject_ciphertext("Read the fixture and return PONG").is_ok());
++        assert!(reject_encrypted_parameters(Some(&["message".to_string()])).is_err());
++        assert!(reject_encrypted_parameters(Some(&[])).is_ok());
++        assert!(reject_encrypted_parameters(None).is_ok());
++    }
++
++    #[test]
++    fn recovered_old_task_preserves_envelope_id_and_saved_ciphertext() {
++        let mut communication = InterAgentCommunication::new_encrypted(
++            AgentPath::root(),
++            AgentPath::try_from("/root/worker").unwrap(),
++            Vec::new(),
++            "old-private-ciphertext".into(),
++            true,
++        );
++        let id = ResponseItemId::from_server("amsg-old-task-id".into());
++        communication.id = Some(id.clone());
++        let original = communication.to_model_input_item();
++        let map = RecoveryMap {
++            version: 1,
++            messages: HashMap::from([(
++                format!("{:x}", Sha256::digest(b"old-private-ciphertext")),
++                "Read the fixture; return OLD_TASK_OK".into(),
++            )]),
++        };
++        let mut input = vec![original.clone()];
++        format_request_with_recovery(&mut input, Some(&map)).unwrap();
++        let ResponseItem::Message {
++            id: restored_id,
++            content,
++            ..
++        } = &input[0]
++        else {
++            panic!("expected recovered message")
++        };
++        assert_eq!(restored_id.as_ref(), Some(&id));
++        let ContentItem::InputText { text } = &content[0] else {
++            panic!("expected text")
++        };
++        assert!(text.contains("/root/worker"));
++        assert!(text.contains("Read the fixture; return OLD_TASK_OK"));
++        assert!(!text.contains("old-private-ciphertext"));
++        assert_eq!(communication.to_model_input_item(), original);
++    }
++
++    #[test]
++    fn unmatched_recovery_leaves_entire_request_unchanged() {
++        let clear = InterAgentCommunication::new(
++            AgentPath::root(),
++            AgentPath::root(),
++            Vec::new(),
++            "clear task".into(),
++            false,
++        );
++        let encrypted = InterAgentCommunication::new_encrypted(
++            AgentPath::root(),
++            AgentPath::root(),
++            Vec::new(),
++            "unknown-cipher".into(),
++            true,
++        );
++        let mut input = vec![clear.to_model_input_item(), encrypted.to_model_input_item()];
++        let original = input.clone();
++        let map = RecoveryMap {
++            version: 1,
++            messages: HashMap::new(),
++        };
++        let error = format_request_with_recovery(&mut input, Some(&map))
++            .unwrap_err()
++            .to_string();
++        assert_eq!(input, original);
++        assert!(!error.contains("unknown-cipher"));
++    }
++
++    #[test]
++    fn malformed_recovery_never_exposes_private_task_text() {
++        for value in [
++            serde_json::json!({"version":2,"messages":{}}),
++            serde_json::json!({"version":1,"messages":{"wrong-hash":"private task"}}),
++            serde_json::json!({"version":1,"messages":{"a".repeat(64):"gAAAAABcipher"}}),
++            serde_json::json!({"version":1,"messages":{"a".repeat(64):"   "}}),
++        ] {
++            let error = decode_recovery_map(&serde_json::to_vec(&value).unwrap())
++                .err()
++                .unwrap()
++                .to_string();
++            assert!(!error.contains("private task"));
++            assert!(!error.contains("gAAAAABcipher"));
++        }
++        assert!(decode_recovery_map(&vec![b' '; MAX_RECOVERY_MAP_BYTES + 1]).is_err());
++    }
++}

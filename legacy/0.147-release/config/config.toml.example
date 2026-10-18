@@ -1,0 +1,17 @@
+# ~/.codex/config.toml 的 DeepSeek 相关片段（脱敏模板）
+# 把 <YOUR_DEEPSEEK_API_KEY> 替换为真实密钥；不要提交真实配置
+
+# flash / pro 二选一（pro 自 2026-08-13 官方 GA 起可用）
+model = "deepseek-v4-flash"
+# model = "deepseek-v4-pro"
+model_provider = "deepseek"
+model_catalog_json = "~/.codex/models.json"
+
+[model_providers.deepseek]
+name = "deepseek"
+base_url = "https://api.deepseek.com/"
+wire_api = "responses"
+experimental_bearer_token = "<YOUR_DEEPSEEK_API_KEY>"
+
+[features.multi_agent_v2]
+max_concurrent_threads_per_session = 16

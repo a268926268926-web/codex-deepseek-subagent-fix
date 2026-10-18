@@ -1,0 +1,8 @@
+{
+  "version": 1,
+  "upstream": "http://127.0.0.1:15721/v1",
+  "model_routes": {
+    "cn:deepseek-v4.1-flash": "ccs-workbuddy/cn:deepseek-v4.1-flash"
+  },
+  "native_profile": "native-upstream.local.json"
+}

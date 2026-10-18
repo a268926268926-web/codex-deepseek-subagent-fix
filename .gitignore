@@ -1,0 +1,42 @@
+# Private runtime inputs
+*.local.json
+*.local.jsonl
+*.local.log
+.codex-v2-runtime-*/
+.codex/
+.cc-switch/
+ccs-home/
+runtime-compatibility.local.json
+routed-models.json
+
+# Credentials and databases
+.env
+.env.*
+auth.json
+*.db
+*.sqlite
+*.sqlite3
+*.pem
+*.key
+*.sig
+
+# Generated and local-only output
+dist/
+build/
+artifacts/
+acceptance/
+outputs/
+screenshots/
+*.log
+
+# Python
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.venv/
+venv/
+
+# OS/editor files
+.DS_Store
+.idea/
+.vscode/

@@ -13,7 +13,7 @@ work_dir=""
 
 usage() {
   cat <<'EOF'
-Usage: scripts/build-release.sh [--output PATH] [--work-dir PATH]
+Usage: legacy/0.147-release/build-release.sh [--output PATH] [--work-dir PATH]
 
 Build the patched Linux x86_64 Codex binary from the pinned upstream source.
 The upstream tag and commit are checked before the patch is applied.

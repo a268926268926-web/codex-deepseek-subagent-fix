@@ -1,0 +1,6 @@
+{
+  "version": 1,
+  "base_url": "https://your-private-compatible-provider.example/v1",
+  "api_key": "<YOUR_PRIVATE_RECOVERY_KEY>",
+  "provider_name": "OpenAI"
+}

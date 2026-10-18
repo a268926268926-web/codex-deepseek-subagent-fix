@@ -1,0 +1,39 @@
+name: Verify model-scoped V2 relay
+
+on:
+  push:
+    paths:
+      - 'scripts/**'
+      - 'tests/**'
+      - 'config/**'
+      - 'docs/**'
+      - '.github/workflows/verify-relay.yml'
+  pull_request:
+    paths:
+      - 'scripts/**'
+      - 'tests/**'
+      - 'config/**'
+      - 'docs/**'
+      - '.github/workflows/verify-relay.yml'
+
+jobs:
+  contracts:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - run: python scripts/check-public-tree.py .
+      - run: python tests/test-routed-v2-relay.py
+      - run: python tests/test-workbuddy-routes.py
+      - run: python tests/test-native-recovery-profile.py
+      - run: python tests/test-prepare-workbuddy-ccs.py
+      - run: python tests/test-ensure-ccs-proxy.py
+      - run: python tests/test-runtime-updater.py
+      - run: python scripts/routed-v2-relay.py --help
+      - run: python scripts/launch-routed-codex.py --help
+      - run: python scripts/update-runtime.py --help
+      - run: python scripts/verify-desktop-wrapper.py --help
+      - run: python scripts/ensure-ccs-proxy.py --help
+      - run: sh -n scripts/launch-codex-v2.sh

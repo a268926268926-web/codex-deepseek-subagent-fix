@@ -39,7 +39,7 @@ jobs:
           esac
 
       - name: Build from pinned upstream source
-        run: scripts/build-release.sh --output "dist/${ASSET}"
+        run: legacy/0.147-release/build-release.sh --output "dist/${ASSET}"
 
       - name: Create checksum
         run: |

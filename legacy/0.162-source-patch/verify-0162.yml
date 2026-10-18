@@ -1,0 +1,51 @@
+name: Verify 0.162 opt-in transport
+
+on:
+  push:
+    branches: ['codex-0.162-v2-plaintext']
+    paths:
+      - 'patches/0.162.0-alpha.17.2/**'
+      - 'legacy/0.162-source-patch/build-0162.sh'
+      - 'scripts/recover-v2-tasks.py'
+      - '.github/workflows/verify-0162.yml'
+  pull_request:
+    paths:
+      - 'patches/0.162.0-alpha.17.2/**'
+      - 'legacy/0.162-source-patch/build-0162.sh'
+      - 'scripts/recover-v2-tasks.py'
+      - '.github/workflows/verify-0162.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 120
+    steps:
+      - uses: actions/checkout@v5
+      - name: Install build dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y cmake libssl-dev libclang-dev pkg-config
+          rustup toolchain install 1.95.0 --profile minimal
+      - name: Check out pinned upstream
+        run: git clone --depth 1 --branch rust-v0.162.0-alpha.17.2 https://github.com/openai/codex.git /tmp/codex-0162
+      - name: Check helper scripts
+        run: |
+          python3 scripts/recover-v2-tasks.py --help
+          python3 scripts/make-routed-catalog.py --help
+          bash -n legacy/0.162-source-patch/build-0162.sh
+      - name: Test and build patch
+        env:
+          CARGO_BUILD_JOBS: '2'
+          CARGO_PROFILE_TEST_DEBUG: '0'
+          CARGO_PROFILE_RELEASE_DEBUG: '0'
+          CARGO_PROFILE_RELEASE_LTO: 'false'
+        run: bash legacy/0.162-source-patch/build-0162.sh --source-dir /tmp/codex-0162
+      - uses: actions/upload-artifact@v4
+        with:
+          name: codex-v2-plaintext-0.162.0-alpha.17.2
+          path: dist/codex-v2-plaintext-0.162.0-alpha.17.2
+          retention-days: 7
