@@ -10,7 +10,8 @@
    python3 scripts/add-native-deepseek-alias.py --catalog /private/routed-models.json
    ```
 5. Copy `config/routes.example.json` to `routed-providers.local.json` and adjust
-   provider keys and model names.
+   provider keys and model names. Set `portable_plaintext` to `true` only when
+   routed V2 task text may be stored outside ciphertext.
 6. Keep credentials only in ignored `.local.json` files with mode `0600`.
 7. Run:
 

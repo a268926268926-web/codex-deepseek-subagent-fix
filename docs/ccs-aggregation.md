@@ -21,6 +21,26 @@ The DeepSeek route targets its member explicitly. This prevents a switch from a
 GPT default provider to another provider from sending Direct DeepSeek traffic to
 an upstream that does not implement it.
 
+For a V2 agent tree that crosses a non-OpenAI provider boundary, add this
+private routes setting:
+
+```json
+{
+  "portable_plaintext": true
+}
+```
+
+This preserves the V2 spawn/wait/follow-up lifecycle while keeping Codex's
+registered `collaboration` namespace. It removes the OpenAI-only
+`message.encrypted` schema marker only on that request and marks plaintext tool
+calls with an explicit empty `encrypted_function_args` value. Child task content
+is delivered as a standard Responses `message`.
+
+This is an explicit confidentiality tradeoff: new task text becomes available
+to local rollout and diagnostic surfaces. It does not decrypt existing
+`gAAAAA...` ciphertext. Keep the option off for OpenAI-native V2 paths that
+should retain server-side encryption.
+
 ## Provider Compatibility
 
 A default or member provider should satisfy all of these:

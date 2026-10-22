@@ -44,6 +44,25 @@ Matching task text is cached privately after two identical reads. This is
 model-mediated recovery, not offline decryption, and hidden reasoning is not
 requested.
 
+## Portable Plaintext V2
+
+Set `portable_plaintext` to `true` in the private routes file when V2 agent tasks
+must cross a provider that cannot consume OpenAI ciphertext. For mapped requests,
+the relay keeps Codex's `collaboration` namespace, removes only the
+`message.encrypted` schema marker, converts plaintext child task messages to
+standard Responses user messages, and returns message-tool calls with
+`encrypted_function_args: []`.
+
+This preserves spawn, wait, follow-up, nested agents, and the V2 relationship
+graph without requiring a patched Codex binary. It intentionally makes new task
+text visible to local rollout, logs, hooks, and diagnostic tooling. Existing
+`gAAAAA...` ciphertext is still not decryptable locally and remains protected by
+the fail-closed recovery path.
+
+When portable mode is enabled, the launcher adds `gpt-6.1-sol` and `gpt-6-luna`
+to its existing `gpt-5.6-sol` and `cn:deepseek-v4.1-flash` aliases. Add another
+parent or child model with `--alias <model-slug>` when launching.
+
 ## CCS Aggregation
 
 CC Switch aggregation has one default provider and zero or more prefixed members:
@@ -62,6 +81,7 @@ provider:
   "model_routes": {
     "cn:deepseek-v4.1-flash": "ccs-workbuddy/cn:deepseek-v4.1-flash"
   },
+  "portable_plaintext": true,
   "native_profile": "native-upstream.local.json"
 }
 ```

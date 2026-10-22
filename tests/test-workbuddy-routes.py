@@ -179,10 +179,11 @@ class RelayHTTPTestCase(unittest.TestCase):
         self.upstream.shutdown()
         self.upstream.server_close()
 
-    def relay_server(self, aliases, routes=None, guard=False):
+    def relay_server(self, aliases, routes=None, guard=False, portable=False):
         server = ThreadingHTTPServer(("127.0.0.1", 0), relay.Handler)
         server.daemon_threads = True
         server.aliases = set(aliases)
+        server.portable_plaintext = portable
         if routes is not None:
             server.model_routes = dict(routes)
         server.upstream = "http://127.0.0.1:%d" % self.upstream.server_port
@@ -271,7 +272,8 @@ class WorkBuddyRouteTests(RelayHTTPTestCase):
 
     def test_workbuddy_alias_rewrites_only_model_and_keeps_responses_shape(self):
         server = self.relay_server({WORKBUDDY_ALIAS},
-                                   routes={WORKBUDDY_ALIAS: WORKBUDDY_TARGET})
+                                   routes={WORKBUDDY_ALIAS: WORKBUDDY_TARGET},
+                                   portable=True)
         body = self.workbuddy_body()
         received, _ = self.request(server, json.dumps(body).encode())
         sent = json.loads(self.upstream.received)
@@ -324,7 +326,8 @@ class WorkBuddyRouteTests(RelayHTTPTestCase):
 
     def test_message_tool_annotations_apply_to_json_and_sse(self):
         server = self.relay_server({WORKBUDDY_ALIAS},
-                                   routes={WORKBUDDY_ALIAS: WORKBUDDY_TARGET})
+                                   routes={WORKBUDDY_ALIAS: WORKBUDDY_TARGET},
+                                   portable=True)
         item = message_item("fc-json")
         other = {"type": "function_call", "id": "fc-other", "namespace": "functions",
                  "name": "exec_command", "arguments": "{}"}
@@ -354,7 +357,8 @@ class WorkBuddyRouteTests(RelayHTTPTestCase):
 
     def test_mapped_gzip_request_and_response_are_normalized(self):
         server = self.relay_server({WORKBUDDY_ALIAS},
-                                   routes={WORKBUDDY_ALIAS: WORKBUDDY_TARGET})
+                                   routes={WORKBUDDY_ALIAS: WORKBUDDY_TARGET},
+                                   portable=True)
         payload = gzip.compress(json.dumps({"output": [message_item("fc-gzip")]}).encode())
         self.upstream.response = (payload, "application/json", "gzip")
         body = gzip.compress(json.dumps({"model": WORKBUDDY_ALIAS, "input": []}).encode())

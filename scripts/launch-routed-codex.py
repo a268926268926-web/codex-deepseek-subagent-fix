@@ -19,6 +19,7 @@ VERSION = "0.163.0-alpha.10.2"
 VERIFIED_RUNTIME_VERSIONS = ("0.162.0-alpha.17.2", VERSION)
 NATIVE_DEEPSEEK_ALIAS = "cn:deepseek-v4.1-flash"
 DEFAULT_ALIASES = ("gpt-5.6-sol", NATIVE_DEEPSEEK_ALIAS)
+PORTABLE_PARENT_ALIASES = ("gpt-6.1-sol", "gpt-6-luna")
 REQUIRED_RUNTIME_CHECKS = {
     "provider_route_matches", "catalog_matches", "code_mode_host_enabled",
     "multi_agent_enabled", "v2_enabled", "model_overrides_exposed",
@@ -141,9 +142,10 @@ def sibling_module(name, filename):
     return module
 
 
-def load_routes_config(path, include_upstream=False):
+def load_routes_config(path, include_upstream=False, include_portable=False):
     if path is None:
-        return ({}, None, None) if include_upstream else ({}, None)
+        values = ({}, None, None, False) if include_upstream else ({}, None, False)
+        return values if include_portable else values[:-1]
     path = Path(path).resolve()
     try:
         if path.stat().st_size > 64 * 1024:
@@ -153,7 +155,8 @@ def load_routes_config(path, include_upstream=False):
         raise ValueError("Routes configuration is missing or invalid") from None
     if (not isinstance(document, dict) or type(document.get("version")) is not int
             or document["version"] != 1
-            or set(document) - {"version", "model_routes", "native_profile", "upstream"}):
+            or set(document) - {"version", "model_routes", "native_profile", "upstream",
+                                "portable_plaintext"}):
         raise ValueError("Unsupported routes configuration")
     routes = document.get("model_routes", {})
     if not isinstance(routes, dict) or any(not isinstance(alias, str) or not isinstance(target, str)
@@ -173,14 +176,31 @@ def load_routes_config(path, include_upstream=False):
         if not native_profile.is_absolute():
             native_profile = path.parent / native_profile
         native_profile = native_profile.resolve()
+    portable_plaintext = document.get("portable_plaintext", False)
+    if not isinstance(portable_plaintext, bool):
+        raise ValueError("portable_plaintext must be a boolean")
+    if include_portable:
+        return (routes, native_profile, upstream, portable_plaintext) if include_upstream else (
+            routes, native_profile, portable_plaintext)
     return (routes, native_profile, upstream) if include_upstream else (routes, native_profile)
 
 
+def effective_aliases(explicit_aliases, model_routes, portable_plaintext):
+    if explicit_aliases:
+        aliases = list(explicit_aliases)
+    else:
+        aliases = list(DEFAULT_ALIASES)
+        if portable_plaintext:
+            aliases.extend(PORTABLE_PARENT_ALIASES)
+    return list(dict.fromkeys([*aliases, *model_routes]))
+
+
 def validate(args):
-    args.model_routes, configured_profile, configured_upstream = load_routes_config(
-        getattr(args, "routes_config", None), include_upstream=True)
+    (args.model_routes, configured_profile, configured_upstream,
+     args.portable_plaintext) = load_routes_config(
+        getattr(args, "routes_config", None), include_upstream=True, include_portable=True)
     args.native_profile = getattr(args, "native_profile", None) or configured_profile
-    args.alias = list(dict.fromkeys([*args.alias, *args.model_routes]))
+    args.alias = effective_aliases(args.alias, args.model_routes, args.portable_plaintext)
     for path in (args.codex_original, args.app):
         if not path.is_file() or not os.access(path, os.X_OK):
             raise ValueError(f"Executable unavailable: {path}")
@@ -321,7 +341,6 @@ def main():
     parser.add_argument("--cli", action="store_true", help="Run the original CLI instead of the desktop")
     parser.add_argument("arguments", nargs=argparse.REMAINDER)
     args = parser.parse_args()
-    args.alias = args.alias or list(DEFAULT_ALIASES)
     if args.routes_config is None:
         candidate = directory / "routed-providers.local.json"
         args.routes_config = candidate if candidate.exists() else None
@@ -349,6 +368,7 @@ def main():
         print(json.dumps({"status": "READY", "runtime": args.runtime_version, "provider": provider,
                           "mapped_aliases": args.alias, "cached_tasks": cached,
                           "model_routes": args.model_routes,
+                          "portable_plaintext": args.portable_plaintext,
                           "independent_native_recovery": args.native_profile is not None,
                           "desktop_activated": False}, ensure_ascii=False))
         return 0
@@ -383,6 +403,8 @@ def main():
             command += ["--alias", alias]
         for alias, target in args.model_routes.items():
             command += ["--model-route", alias + "=" + target]
+        if args.portable_plaintext:
+            command += ["--portable-plaintext"]
         if args.native_profile is not None:
             command += ["--native-profile", str(args.native_profile)]
         try:

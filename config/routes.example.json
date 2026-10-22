@@ -4,5 +4,6 @@
   "model_routes": {
     "cn:deepseek-v4.1-flash": "ccs-workbuddy/cn:deepseek-v4.1-flash"
   },
+  "portable_plaintext": false,
   "native_profile": "native-upstream.local.json"
 }

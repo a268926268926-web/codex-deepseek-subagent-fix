@@ -37,6 +37,13 @@ The direct `cn:deepseek-v4.1-flash` alias maps explicitly to
 `ccs-workbuddy/cn:deepseek-v4.1-flash`. This keeps DeepSeek independent of the CCS
 aggregation default.
 
+With `portable_plaintext` enabled, the relay removes the `message.encrypted`
+schema marker for the routed request and marks message calls with
+`encrypted_function_args: []`. It retains Codex's registered `collaboration`
+namespace so direct tool dispatch continues to match the host registry. This
+preserves the V2 agent graph while using standard Responses messages at the
+external provider boundary.
+
 ### Recovery
 
 An old encrypted task is looked up by SHA-256. On a miss, automatic recovery reads

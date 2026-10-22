@@ -103,13 +103,13 @@ def message_tool(item):
             and namespace in {"functions", "collaboration"})
 
 
-def annotate_response(value):
+def annotate_response(value, portable_plaintext=False):
     """Upstream Codex recognizes an explicit empty list as direct plaintext V2 arguments."""
     if isinstance(value, list):
         for item in value:
-            annotate_response(item)
+            annotate_response(item, portable_plaintext)
     elif isinstance(value, dict):
-        if message_tool(value):
+        if portable_plaintext and message_tool(value):
             if value.get("encrypted_function_args"):
                 raise RelayError("Routed model returned encrypted tool arguments")
             arguments = value.get("arguments", "")
@@ -124,7 +124,7 @@ def annotate_response(value):
             value["encrypted_function_args"] = []
         for child in value.values():
             if isinstance(child, (dict, list)):
-                annotate_response(child)
+                annotate_response(child, portable_plaintext)
 
 
 def clear_message_markers(value, namespace="functions"):
@@ -141,6 +141,19 @@ def clear_message_markers(value, namespace="functions"):
         for child in value.values():
             if isinstance(child, (dict, list)):
                 clear_message_markers(child, namespace)
+
+
+def prepare_portable_tool_definitions(value):
+    """Remove only the encrypted argument marker from V2 task messages."""
+    if isinstance(value, list):
+        for child in value:
+            prepare_portable_tool_definitions(child)
+    elif isinstance(value, dict):
+        if value.get("type") == "namespace" and value.get("name") == "collaboration":
+            clear_message_markers(value.get("tools", []), "collaboration")
+        for child in value.values():
+            if isinstance(child, (dict, list)):
+                prepare_portable_tool_definitions(child)
 
 
 class TaskRecovery:
@@ -208,7 +221,7 @@ class TaskRecovery:
             return first[0]
 
 
-def adapt_request(value, recovery):
+def adapt_request(value, recovery, portable_plaintext=False):
     items = value.get("input")
     if isinstance(items, list):
         rewritten = []
@@ -232,7 +245,8 @@ def adapt_request(value, recovery):
                 restored["id"] = item["id"]
             rewritten.append(restored)
         value["input"] = rewritten
-    clear_message_markers(value.get("tools", []))
+    if portable_plaintext:
+        prepare_portable_tool_definitions(value)
     return value
 
 
@@ -290,7 +304,8 @@ class Handler(BaseHTTPRequestHandler):
                         if isinstance(item, dict) and item.get("type") == "additional_tools":
                             item["tools"] = []
                 elif mapped:
-                    value = adapt_request(value, self.server.recovery)
+                    value = adapt_request(value, self.server.recovery,
+                                          getattr(self.server, "portable_plaintext", False))
                     if model in routes:
                         value["model"] = routes[model]
                 if mapped or guarded:
@@ -322,7 +337,7 @@ class Handler(BaseHTTPRequestHandler):
                 if guarded:
                     guard_recovery_response(value)
                 if mapped:
-                    annotate_response(value)
+                    annotate_response(value, getattr(self.server, "portable_plaintext", False))
                 json_body = json.dumps(value, ensure_ascii=False).encode()
             self.send_response(upstream.status)
             for key, value in upstream.headers.items():
@@ -341,16 +356,19 @@ class Handler(BaseHTTPRequestHandler):
                         if guarded:
                             guard_recovery_response(value)
                         item = value.get("item", {})
-                        if message_tool(item) and item.get("id"):
+                        if (getattr(self.server, "portable_plaintext", False)
+                                and message_tool(item) and item.get("id")):
                             message_ids.add(item["id"])
-                        if value.get("type") == "response.function_call_arguments.delta" and value.get("item_id") in message_ids:
+                        if (getattr(self.server, "portable_plaintext", False)
+                                and value.get("type") == "response.function_call_arguments.delta"
+                                and value.get("item_id") in message_ids):
                             identifier = value["item_id"]
                             args = pending_args.get(identifier, "") + value.get("delta", "")
                             pending_args[identifier] = args
                             if re.search(r'"message"\s*:\s*"\s*gAAAAA', args):
                                 raise RelayError("Routed model returned opaque task content")
                         if mapped:
-                            annotate_response(value)
+                            annotate_response(value, getattr(self.server, "portable_plaintext", False))
                         line = b"data: " + json.dumps(value, ensure_ascii=False).encode() + b"\n"
                     self.wfile.write(line)
                     self.wfile.flush()
@@ -388,6 +406,8 @@ def main():
                         help="Private original-provider credentials for independent encrypted-task recovery")
     parser.add_argument("--recovery-model", default="gpt-6.1-sol")
     parser.add_argument("--auto-recover", action="store_true")
+    parser.add_argument("--portable-plaintext", action="store_true",
+                        help="Expose provider-neutral plaintext V2 collaboration tools")
     parser.add_argument("--port", type=int, default=0)
     parser.add_argument("--ready-file", type=Path, required=True)
     parser.add_argument("--timeout", type=float, default=180)
@@ -409,6 +429,7 @@ def main():
     server.daemon_threads = True
     server.aliases = set(args.alias) | set(routes)
     server.model_routes = routes
+    server.portable_plaintext = args.portable_plaintext
     server.upstream = args.upstream.rstrip("/")
     server.timeout = args.timeout
     server.opener = urllib.request.build_opener(NoRedirect())

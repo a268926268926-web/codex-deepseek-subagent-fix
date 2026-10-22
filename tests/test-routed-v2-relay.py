@@ -31,6 +31,22 @@ class RuntimeCompatibilityTests(unittest.TestCase):
     def test_native_deepseek_is_a_default_plaintext_alias(self):
         self.assertIn(launcher.NATIVE_DEEPSEEK_ALIAS, launcher.DEFAULT_ALIASES)
         self.assertEqual(launcher.NATIVE_DEEPSEEK_ALIAS, "cn:deepseek-v4.1-flash")
+        self.assertEqual(launcher.PORTABLE_PARENT_ALIASES, ("gpt-6.1-sol", "gpt-6-luna"))
+
+    def test_portable_mode_adds_current_parent_aliases_only_by_default(self):
+        routes = {"cn:deepseek-v4.1-flash": "target"}
+        self.assertEqual(
+            launcher.effective_aliases([], routes, False),
+            ["gpt-5.6-sol", "cn:deepseek-v4.1-flash"],
+        )
+        self.assertEqual(
+            launcher.effective_aliases([], routes, True),
+            ["gpt-5.6-sol", "cn:deepseek-v4.1-flash", "gpt-6.1-sol", "gpt-6-luna"],
+        )
+        self.assertEqual(
+            launcher.effective_aliases(["custom-parent"], routes, True),
+            ["custom-parent", "cn:deepseek-v4.1-flash"],
+        )
 
     def test_launch_issue_is_logged_privately_in_headless_session(self):
         with tempfile.TemporaryDirectory() as temporary, mock.patch.dict(
@@ -81,6 +97,36 @@ class RuntimeCompatibilityTests(unittest.TestCase):
                 launcher.verified_runtime(Path("/unused/codex"))
             self.assertIn("unrecognized", str(caught.exception))
             self.assertNotIn("sensitive", str(caught.exception))
+
+    def test_routes_config_can_enable_portable_plaintext(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            path = Path(temporary) / "routes.json"
+            path.write_text(json.dumps({
+                "version": 1,
+                "upstream": "http://127.0.0.1:15721/v1",
+                "model_routes": {},
+                "portable_plaintext": True,
+            }))
+            routes, profile, upstream, portable = launcher.load_routes_config(
+                path,
+                include_upstream=True,
+                include_portable=True,
+            )
+            self.assertEqual(routes, {})
+            self.assertIsNone(profile)
+            self.assertEqual(upstream, "http://127.0.0.1:15721/v1")
+            self.assertTrue(portable)
+
+    def test_routes_config_rejects_non_boolean_portable_plaintext(self):
+        with tempfile.TemporaryDirectory() as temporary:
+            path = Path(temporary) / "routes.json"
+            path.write_text(json.dumps({
+                "version": 1,
+                "model_routes": {},
+                "portable_plaintext": "yes",
+            }))
+            with self.assertRaisesRegex(ValueError, "portable_plaintext"):
+                launcher.load_routes_config(path, include_portable=True)
 
 
 class CatalogContractTests(unittest.TestCase):
@@ -276,8 +322,8 @@ class ContractTests(unittest.TestCase):
                 "name": "spawn_agent", "arguments": json.dumps({"message": "Read fixture"})}
         added = {"type": "response.output_item.added", "item": copy.deepcopy(item)}
         completed = {"type": "response.completed", "response": {"output": [copy.deepcopy(item)]}}
-        relay.annotate_response(added)
-        relay.annotate_response(completed)
+        relay.annotate_response(added, portable_plaintext=True)
+        relay.annotate_response(completed, portable_plaintext=True)
         self.assertEqual(added["item"]["encrypted_function_args"], [])
         self.assertEqual(completed["response"]["output"][0]["encrypted_function_args"], [])
         self.assertEqual(added["item"]["id"], item["id"])
@@ -287,17 +333,123 @@ class ContractTests(unittest.TestCase):
         opaque = {"type": "function_call", "name": "send_message",
                   "arguments": json.dumps({"message": "gAAAAABopaque"})}
         with self.assertRaises(relay.RelayError):
-            relay.annotate_response(opaque)
+            relay.annotate_response(opaque, portable_plaintext=True)
         self.assertNotIn("encrypted_function_args", opaque)
         external = {"type": "function_call", "namespace": "mcp__example", "name": "send_message",
                     "arguments": "{}"}
         original = copy.deepcopy(external)
-        relay.annotate_response(external)
+        relay.annotate_response(external, portable_plaintext=True)
         self.assertEqual(external, original)
         opaque["arguments"] = "{}"
         opaque["encrypted_function_args"] = ["message"]
         with self.assertRaises(relay.RelayError):
-            relay.annotate_response(opaque)
+            relay.annotate_response(opaque, portable_plaintext=True)
+
+    def test_default_mode_preserves_encrypted_schema_and_tool_arguments(self):
+        namespace = {
+            "type": "namespace",
+            "name": "collaboration",
+            "tools": [{
+                "type": "function",
+                "name": "spawn_agent",
+                "parameters": {"properties": {"message": {"type": "string", "encrypted": True}}},
+            }],
+        }
+        body = {"input": [], "tools": [namespace]}
+        rewritten = relay.adapt_request(copy.deepcopy(body), object())
+        self.assertTrue(
+            rewritten["tools"][0]["tools"][0]["parameters"]["properties"]["message"]["encrypted"]
+        )
+
+        call = {
+            "type": "function_call",
+            "namespace": "collaboration",
+            "name": "spawn_agent",
+            "arguments": json.dumps({"message": "ciphertext-producing task"}),
+            "encrypted_function_args": ["opaque-envelope"],
+        }
+        before = copy.deepcopy(call)
+        relay.annotate_response(call)
+        self.assertEqual(call, before)
+
+    def test_portable_plaintext_keeps_registered_namespace_and_clears_marker(self):
+        namespace = {
+            "type": "namespace",
+            "name": "collaboration",
+            "tools": [
+                {
+                    "type": "function",
+                    "name": "spawn_agent",
+                    "parameters": {
+                        "properties": {
+                            "message": {"type": "string", "encrypted": True},
+                        },
+                    },
+                },
+                {"type": "function", "name": "wait_agent", "parameters": {}},
+            ],
+        }
+        body = {"model": "mapped-test", "input": [], "tools": [namespace]}
+        rewritten = relay.adapt_request(
+            copy.deepcopy(body),
+            object(),
+            portable_plaintext=True,
+        )
+        portable = rewritten["tools"][0]
+        self.assertEqual(portable["name"], "collaboration")
+        self.assertNotIn(
+            "encrypted",
+            portable["tools"][0]["parameters"]["properties"]["message"],
+        )
+
+        call = {
+            "type": "function_call",
+            "id": "fc-portable",
+            "namespace": "collaboration",
+            "name": "spawn_agent",
+            "arguments": json.dumps({"message": "plain task"}),
+        }
+        response = {"type": "response.output_item.done", "item": call}
+        relay.annotate_response(response, portable_plaintext=True)
+        self.assertEqual(response["item"]["namespace"], "collaboration")
+        self.assertEqual(response["item"]["encrypted_function_args"], [])
+        self.assertEqual(response["item"]["arguments"], call["arguments"])
+
+        wait_call = {
+            "type": "function_call",
+            "id": "fc-wait",
+            "namespace": "collaboration",
+            "name": "wait_agent",
+            "arguments": json.dumps({"targets": ["child"], "timeout_ms": 1000}),
+        }
+        relay.annotate_response(wait_call, portable_plaintext=True)
+        self.assertEqual(wait_call["namespace"], "collaboration")
+        self.assertNotIn("encrypted_function_args", wait_call)
+
+    def test_portable_plaintext_agent_message_becomes_standard_message(self):
+        body = {
+            "input": [
+                {
+                    "type": "agent_message",
+                    "id": "amsg-portable",
+                    "content": [{"type": "input_text", "text": "plain task"}],
+                }
+            ]
+        }
+        rewritten = relay.adapt_request(
+            copy.deepcopy(body),
+            object(),
+            portable_plaintext=True,
+        )
+        self.assertEqual(
+            rewritten["input"][0],
+            {
+                "type": "message",
+                "role": "user",
+                "content": [{"type": "input_text", "text": "plain task"}],
+                "id": "amsg-portable",
+            },
+        )
 
 
 class HTTPContractTests(unittest.TestCase):
@@ -371,8 +523,66 @@ class HTTPContractTests(unittest.TestCase):
         self.assertEqual(task["role"], "user")
         self.assertEqual(task["content"][0]["text"], "Recovered user task")
         response_item = json.loads(received.splitlines()[0][6:])["item"]
-        self.assertEqual(response_item["encrypted_function_args"], [])
+        self.assertNotIn("encrypted_function_args", response_item)
         self.assertEqual(response_item["arguments"], item["arguments"])
+        self.assertIn(b"data: [DONE]", received)
+
+    def test_portable_plaintext_http_roundtrip(self):
+        self.server.portable_plaintext = True
+        upstream_call = {
+            "type": "function_call",
+            "id": "fc-portable-http",
+            "namespace": "collaboration",
+            "name": "spawn_agent",
+            "arguments": json.dumps({"task_name": "worker", "message": "plain task"}),
+        }
+        stream = (
+            b"data: "
+            + json.dumps(
+                {"type": "response.output_item.done", "item": upstream_call}
+            ).encode()
+            + b"\n\ndata: [DONE]\n\n"
+        )
+        self.upstream.reply = stream, "text/event-stream", None
+        body = {
+            "model": "mapped-test",
+            "input": [
+                {
+                    "type": "agent_message",
+                    "id": "amsg-portable-http",
+                    "content": [{"type": "input_text", "text": "plain task"}],
+                }
+            ],
+            "tools": [
+                {
+                    "type": "namespace",
+                    "name": "collaboration",
+                    "tools": [
+                        {
+                            "type": "function",
+                            "name": "spawn_agent",
+                            "parameters": {
+                                "properties": {
+                                    "message": {"type": "string", "encrypted": True},
+                                },
+                            },
+                        }
+                    ],
+                }
+            ],
+        }
+        received, _ = self.request(json.dumps(body).encode())
+        forwarded = json.loads(self.upstream.received)
+        self.assertEqual(forwarded["tools"][0]["name"], "collaboration")
+        self.assertNotIn(
+            "encrypted",
+            forwarded["tools"][0]["tools"][0]["parameters"]["properties"]["message"],
+        )
+        self.assertEqual(forwarded["input"][0]["type"], "message")
+        self.assertEqual(forwarded["input"][0]["content"][0]["text"], "plain task")
+        response_item = json.loads(received.splitlines()[0][6:])["item"]
+        self.assertEqual(response_item["namespace"], "collaboration")
+        self.assertEqual(response_item["encrypted_function_args"], [])
         self.assertIn(b"data: [DONE]", received)
 
     def test_mapped_gzip_plaintext_response_is_consistently_decoded(self):
@@ -383,12 +593,14 @@ class HTTPContractTests(unittest.TestCase):
 
     def test_mapped_gzip_sse_response_is_decoded_and_adapted(self):
         item = {"type": "function_call", "id": "fc-gzip", "name": "send_message",
-                "namespace": "collaboration", "arguments": '{"message":"Readable task"}'}
+                "namespace": "collaboration", "arguments": '{"message":"Readable task"}',
+                "encrypted_function_args": ["opaque-envelope"]}
         event = {"type": "response.output_item.done", "item": item}
         stream = b"data: " + json.dumps(event).encode() + b"\n\ndata: [DONE]\n\n"
         self.upstream.reply = gzip.compress(stream), "text/event-stream", "gzip"
         received, headers = self.request(b'{"model":"mapped-test","input":[]}')
-        self.assertEqual(json.loads(received.splitlines()[0][6:])["item"]["encrypted_function_args"], [])
+        self.assertEqual(json.loads(received.splitlines()[0][6:])["item"]["encrypted_function_args"],
+                         ["opaque-envelope"])
         self.assertNotIn("Content-Encoding", headers)
 
     def test_recovery_has_no_tools_and_blocks_upstream_tool_call(self):
